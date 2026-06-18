@@ -429,8 +429,7 @@ FROM raw.afspraken
   )
 }
 
-load_data <- function() {
-  return(list())
+data <- list()
 }
 
 # --------------------------------------------------
