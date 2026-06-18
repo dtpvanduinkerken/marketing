@@ -1,0 +1,477 @@
+/* =====================================
+   FONTS
+===================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* =====================================
+   ALGEMENE PAGINA
+===================================== */
+
+.content-wrapper,
+.right-side {
+  background-color: #f9f3e9 !important;
+}
+
+body {
+  font-family: "Inter", sans-serif;
+  background-color: #f9f3e9;
+  color: #111827;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* =====================================
+   HEADER
+===================================== */
+
+.main-header .logo {
+  background: #ffffff !important;
+  color: #111827 !important;
+  border-bottom: none !important;
+  font-weight: 700;
+  font-size: 16px;
+  letter-spacing: -0.3px;
+}
+
+.main-header .navbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e8ecf0;
+  box-shadow: none;
+}
+
+.main-header .navbar .sidebar-toggle {
+  color: #374151 !important;
+}
+
+/* =====================================
+   SIDEBAR
+===================================== */
+
+.main-sidebar {
+  background: #ffffff !important;
+  width: 268px !important;
+  border-right: 1px solid #e8ecf0;
+  box-shadow: 2px 0 12px rgba(0,0,0,0.03);
+}
+
+/* Desktop layout */
+
+.content-wrapper,
+.main-footer {
+  margin-left: 268px !important;
+}
+
+.main-header .logo {
+  width: 268px !important;
+}
+
+.main-header .navbar {
+  margin-left: 268px !important;
+}
+
+/* Ingeklapte sidebar */
+
+.sidebar-collapse .main-sidebar {
+  transform: translate(-208px, 0);
+}
+
+.sidebar-collapse .content-wrapper,
+.sidebar-collapse .main-footer {
+  margin-left: 60px !important;
+}
+
+.sidebar-collapse .main-header .navbar {
+  margin-left: 60px !important;
+}
+
+.sidebar-collapse .main-header .logo {
+  width: 60px !important;
+}
+
+.sidebar-collapse .sidebar-menu li a span {
+  display: none;
+}
+
+.sidebar-collapse .sidebar-menu li a {
+  text-align: center;
+}
+
+.sidebar-collapse .sidebar-menu li a i {
+  margin-right: 0;
+  font-size: 18px;
+}
+
+/* =====================================
+   MENU ITEMS
+===================================== */
+
+.sidebar-menu {
+  padding: 16px 12px;
+}
+
+.sidebar-menu > li {
+  margin-bottom: 2px;
+}
+
+.sidebar-menu > li > a {
+  border-radius: 10px !important;
+  padding: 11px 16px !important;
+  color: #4b5563 !important;
+  font-size: 14px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-menu > li > a:hover {
+  background: #f3f6f0 !important;
+  color: #111827 !important;
+}
+
+.sidebar-menu > li.active > a {
+  background: #eef5df !important;
+  color: #2d6a04 !important;
+  font-weight: 600;
+  border-left: none !important;
+}
+
+.sidebar-menu > li.active > a i {
+  color: #8cbe26 !important;
+}
+
+.sidebar-menu li a i {
+  color: #9ca3af !important;
+  width: 18px;
+  font-size: 14px;
+}
+
+/* Verwijder standaard groene streep */
+.skin-blue .sidebar-menu > li.active > a {
+  border-left-color: transparent !important;
+}
+
+/* Sectie-label boven menugroep */
+.sidebar-menu .header {
+  color: #9ca3af;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 16px 16px 6px;
+}
+
+/* =====================================
+   CONTENT
+===================================== */
+
+.content {
+  padding: 28px 30px;
+}
+
+h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 20px;
+  letter-spacing: -0.3px;
+}
+
+/* =====================================
+   KPI CARDS
+===================================== */
+
+.kpi-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px 26px;
+  min-height: 120px;
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.04),
+    0 4px 16px rgba(0,0,0,0.05);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  border: 1px solid rgba(0,0,0,0.03);
+}
+
+.kpi-card:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 2px 6px rgba(0,0,0,0.05),
+    0 12px 28px rgba(0,0,0,0.07);
+}
+
+.kpi-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 14px;
+}
+
+.kpi-title {
+  color: #6b7280;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.4;
+}
+
+.kpi-value {
+  color: #111827;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+
+.kpi-subtitel {
+  color: #9ca3af;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+/* Trend badges */
+
+.kpi-trend-up {
+  background: #ecfdf3;
+  color: #15803d;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kpi-trend-down {
+  background: #fef2f2;
+  color: #dc2626;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kpi-trend-neutral {
+  background: #f3f4f6;
+  color: #6b7280;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* =====================================
+   BOXEN
+===================================== */
+
+.box {
+  background: #ffffff !important;
+  border: 1px solid rgba(0,0,0,0.04) !important;
+  border-radius: 16px !important;
+  box-shadow:
+    0 1px 3px rgba(0,0,0,0.04),
+    0 4px 16px rgba(0,0,0,0.05) !important;
+  overflow: hidden;
+  margin-bottom: 20px !important;
+}
+
+.box-header {
+  border-bottom: 1px solid #f0f3f6;
+  padding: 18px 24px;
+  background: transparent;
+}
+
+.box-title {
+  font-size: 15px !important;
+  font-weight: 700 !important;
+  color: #111827 !important;
+  letter-spacing: -0.2px;
+}
+
+.box-body {
+  padding: 20px 24px;
+}
+
+/* =====================================
+   TABELLEN
+===================================== */
+
+.dataTable,
+table.shiny-table {
+  width: 100% !important;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  font-family: "Inter", sans-serif;
+}
+
+table thead th {
+  background: #f8fafc !important;
+  color: #374151 !important;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 11px 14px !important;
+  border-bottom: 2px solid #e5eaef !important;
+  border-top: none;
+  white-space: nowrap;
+}
+
+table tbody td {
+  padding: 11px 14px !important;
+  border-bottom: 1px solid #f1f4f7 !important;
+  color: #374151;
+  vertical-align: middle;
+}
+
+table tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+table tbody tr:hover td {
+  background: #f8fafc !important;
+}
+
+/* Rechts uitlijnen van numerieke kolommen */
+table td:not(:first-child) {
+  text-align: right;
+}
+
+table th:not(:first-child) {
+  text-align: right;
+}
+
+/* =====================================
+   SELECT INPUT
+===================================== */
+
+.selectize-control .selectize-input {
+  border: 1px solid #e0e5ea !important;
+  border-radius: 10px !important;
+  padding: 9px 14px !important;
+  font-size: 14px;
+  font-family: "Inter", sans-serif;
+  box-shadow: none !important;
+  color: #111827;
+}
+
+.selectize-control .selectize-input.focus {
+  border-color: #8cbe26 !important;
+  box-shadow: 0 0 0 3px rgba(140,190,38,0.12) !important;
+}
+
+.selectize-dropdown {
+  border: 1px solid #e0e5ea !important;
+  border-radius: 10px !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.1) !important;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+.selectize-dropdown-content .option.selected,
+.selectize-dropdown-content .option.active {
+  background: #eef5df !important;
+  color: #2d6a04 !important;
+}
+
+/* =====================================
+   PLOTLY CHARTS
+===================================== */
+
+.js-plotly-plot {
+  border-radius: 10px;
+}
+
+.js-plotly-plot .plotly .modebar {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.js-plotly-plot:hover .plotly .modebar {
+  opacity: 1;
+}
+
+/* =====================================
+   PLACEHOLDER MELDINGEN
+===================================== */
+
+.placeholder-melding {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 60px 20px;
+  color: #9ca3af;
+  font-size: 15px;
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px dashed #d1d5db;
+}
+
+.placeholder-melding i {
+  font-size: 32px;
+  color: #d1d5db;
+}
+
+/* =====================================
+   SCROLLBAR
+===================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b0b7c3;
+}
+
+/* =====================================
+   MOBILE
+===================================== */
+
+@media (max-width: 768px) {
+  .main-sidebar {
+    width: 250px !important;
+  }
+
+  .content-wrapper,
+  .main-header .navbar,
+  .main-footer {
+    margin-left: 0 !important;
+  }
+
+  .content {
+    padding: 16px;
+  }
+
+  .kpi-value {
+    font-size: 26px;
+  }
+}
+
+.funnel-card {
+  transition: all .2s ease;
+}
+
+.funnel-card:hover {
+  transform: translateY(-2px);
+}
