@@ -1,9 +1,21 @@
-FROM rocker/shiny:latest
+FROM rocker/shiny:4.4.0
 
-RUN R -e "install.packages(c('shiny','shinydashboard','DBI','duckdb','plotly','dplyr','DT','googleAnalyticsR'), repos='https://cloud.r-project.org')"
+# Systeemdependencies die duckdb / curl-gebaseerde packages nodig hebben
+RUN apt-get update && apt-get install -y \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    libxml2-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY . /srv/shiny-server/
+WORKDIR /srv/shiny-server/app
+
+# Eerst alleen install.R kopiëren zodat Docker de package-laag kan cachen
+COPY install.R .
+RUN Rscript install.R
+
+# Rest van de app kopiëren
+COPY . .
 
 EXPOSE 3838
 
-CMD ["/usr/bin/shiny-server"]
+CMD ["R", "-e", "shiny::runApp(appDir='/srv/shiny-server/app', host='0.0.0.0', port=3838)"]
