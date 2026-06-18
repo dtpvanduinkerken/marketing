@@ -1,10 +1,16 @@
 library(shiny)
+print("STAP 1")
+
 library(shinydashboard)
+print("STAP 2")
+
 library(DBI)
 library(duckdb)
 library(plotly)
 library(dplyr)
 library(googleAnalyticsR)
+
+print("STAP 3")
 
 # --------------------------------------------------
 # CONSTANTEN
