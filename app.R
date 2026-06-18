@@ -14,7 +14,7 @@ KLEUR_PRIMAIR   <- "#8cbe26"
 KLEUR_SECUNDAIR <- "#6ca61c"
 KLEUR_TERTIAIR  <- "#4d7e12"
 KLEUR_LICHT     <- "#c5e07a"
-DB_PAD          <- "~/DataPlatform/bedrijf.duckdb"
+DB_PAD <- "bedrijf.duckdb"
 
 # --------------------------------------------------
 # DATABASE
