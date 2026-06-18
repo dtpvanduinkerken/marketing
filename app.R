@@ -16,11 +16,17 @@ KLEUR_TERTIAIR  <- "#4d7e12"
 KLEUR_LICHT     <- "#c5e07a"
 DB_PAD <- "bedrijf.duckdb"
 
+print("STAP 4")
+print(file.exists("bedrijf.duckdb"))
+
 # --------------------------------------------------
 # DATABASE
 # --------------------------------------------------
 
 con <- dbConnect(duckdb::duckdb(), DB_PAD)
+
+print("STAP 5")
+
 onStop(function() dbDisconnect(con, shutdown = TRUE))
 
 # --------------------------------------------------
@@ -429,8 +435,7 @@ FROM raw.afspraken
   )
 }
 
-data <- list()
-}
+data <- load_data()
 
 # --------------------------------------------------
 # TREND BEREKENING
