@@ -276,23 +276,121 @@ FROM raw.afspraken
     GROUP BY status
   ")
   
-  website_kpis <- data.frame()
-  website_dagelijks <- data.frame()
-  website_paginas <- data.frame()
-  website_bronnen <- data.frame()
-  website_devices <- data.frame()
-  website_search_terms <- data.frame()
-  website_checkout_funnel <- data.frame()
+  website_kpis <- ga_data(
+    propertyId = 314034198,
+    date_range = c("30daysAgo", "today"),
+    metrics    = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
+  )
+  website_dagelijks <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "date", metrics = c("activeUsers", "sessions")
+  )
+  website_paginas <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "pagePath", metrics = c("screenPageViews"), limit = 20
+  )
+  website_bronnen <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "sessionSource", metrics = c("sessions"), limit = 20
+  )
+  website_devices <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "deviceCategory", metrics = c("activeUsers")
+  )
+  website_search_terms <- ga_data(
+    propertyId = 314034198,
+    date_range = c("30daysAgo", "today"),
+    dimensions = "searchTerm",
+    metrics = c("eventCount"),
+    limit = 10
+  )
+  website_checkout_funnel <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "eventName", metrics = c("eventCount")
+  ) |>
+    dplyr::filter(eventName %in% c(
+      "page_view", "view_item", "add_to_cart", "begin_checkout", "purchase"
+    ))
   
-  website_pilot_voor <- data.frame()
-  website_pilot_funnel_voor <- data.frame()
-  website_pilot_devices_voor <- data.frame()
-  website_pilot_dagelijks_voor <- data.frame()
+  # WEBSITE PILOT - VOOR
+  website_pilot_voor <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-04-28", "2025-05-27"),
+    metrics = c(
+      "activeUsers",
+      "sessions",
+      "screenPageViews",
+      "engagementRate"
+    )
+  )
   
-  website_pilot_na <- data.frame()
-  website_pilot_funnel_na <- data.frame()
-  website_pilot_devices_na <- data.frame()
-  website_pilot_dagelijks_na <- data.frame()
+  website_pilot_funnel_voor <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-04-28", "2025-05-27"),
+    dimensions = "eventName",
+    metrics = c("eventCount")
+  ) |>
+    filter(eventName %in% c(
+      "page_view",
+      "view_item",
+      "add_to_cart",
+      "begin_checkout",
+      "purchase"
+    ))
+  
+  website_pilot_devices_voor <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-04-28", "2025-05-27"),
+    dimensions = "deviceCategory",
+    metrics = c("sessions")
+  )
+  
+  website_pilot_dagelijks_voor <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-04-28", "2025-05-27"),
+    dimensions = "date",
+    metrics = c("sessions")
+  )
+  
+  # WEBSITE PILOT - NA
+  website_pilot_na <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-05-28", "2025-06-28"),
+    metrics = c(
+      "activeUsers",
+      "sessions",
+      "screenPageViews",
+      "engagementRate"
+    )
+  )
+  
+  website_pilot_funnel_na <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-05-28", "2025-06-28"),
+    dimensions = "eventName",
+    metrics = c("eventCount")
+  ) |>
+    filter(eventName %in% c(
+      "page_view",
+      "view_item",
+      "add_to_cart",
+      "begin_checkout",
+      "purchase"
+    ))
+  
+  website_pilot_devices_na <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-05-28", "2025-06-28"),
+    dimensions = "deviceCategory",
+    metrics = c("sessions")
+  )
+  
+  website_pilot_dagelijks_na <- ga_data(
+    propertyId = 314034198,
+    date_range = c("2025-05-28", "2025-06-28"),
+    dimensions = "date",
+    metrics = c("sessions")
+  )
   
   list(
     pricing = pricing, klanten = klanten, marketing = marketing,
@@ -331,7 +429,9 @@ FROM raw.afspraken
   )
 }
 
-data <- load_data()
+load_data <- function() {
+  return(list())
+}
 
 # --------------------------------------------------
 # TREND BEREKENING
