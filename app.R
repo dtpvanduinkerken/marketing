@@ -57,6 +57,10 @@ website_data_beschikbaar <- FALSE
 ga_token_base64 <- Sys.getenv("GA_TOKEN_BASE64", unset = "")
 ga_auth_json     <- Sys.getenv("GA_AUTH_JSON_PATH", unset = "")
 
+# Debug: toont alleen de LENGTE van de variabele, nooit de inhoud zelf.
+message("Debug: lengte van GA_TOKEN_BASE64 = ", nchar(ga_token_base64), " karakters.")
+message("Debug: lengte van GA_AUTH_JSON_PATH = ", nchar(ga_auth_json), " karakters.")
+
 if (nzchar(ga_token_base64)) {
   
   tryCatch({
