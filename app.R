@@ -127,6 +127,15 @@ if (nzchar(ga_token_base64)) {
 con <- dbConnect(duckdb::duckdb(), DB_PAD)
 onStop(function() dbDisconnect(con, shutdown = TRUE))
 
+# Expliciet de icu-extensie laden (nodig voor sommige datum/locale-functies
+# in de mart-views). Wordt al tijdens de Docker build geïnstalleerd onder
+# dezelfde HOME als waarmee de app draait, zodat dit hier alleen het laden
+# is, zonder netwerktoegang nodig te hebben.
+tryCatch({
+  dbExecute(con, "LOAD icu")
+}, error = function(e) {
+  message("Waarschuwing: kon DuckDB-extensie 'icu' niet laden: ", conditionMessage(e))
+})
 
 # --------------------------------------------------
 # HELPER: OPMAAK
@@ -1825,7 +1834,7 @@ server <- function(input, output, session) {
         "<li>Verkort aanmeldformulier</li>",
         "</ul>",
         "</div>"
-      
+        
       )
     )
     
