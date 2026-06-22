@@ -90,7 +90,15 @@ if (nzchar(ga_token_base64)) {
   tryCatch({
     token_pad <- file.path(tempdir(), "ga_token.rds")
     writeBin(base64enc::base64decode(ga_token_base64), token_pad)
-    googleAnalyticsR::ga_auth(token = token_pad)
+    
+    # Belangrijk: het .rds bestand zelf inlezen met readRDS() en het
+    # resulterende TOKEN-OBJECT (niet het bestandspad!) doorgeven aan
+    # ga_auth(). Als je een pad-string doorgeeft, behandelt gargle dat
+    # soms als een cache-bestandsnaam-aanduiding en plakt er intern een
+    # account-specifieke suffix achter, wat tot een 'Not a directory'
+    # fout leidt zodra het pad zelf al naar een bestand verwijst.
+    token_object <- readRDS(token_pad)
+    googleAnalyticsR::ga_auth(token = token_object)
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via OAuth-token.")
   }, error = function(e) {
