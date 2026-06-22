@@ -54,7 +54,7 @@ website_data_beschikbaar <- FALSE
 ga4_fout_melding <- NULL
 
 # Primaire bron: Secret File op een vast pad.
-ga_service_account_secret_pad <- "/DataPlatform/secrets/ga4-service-account.json"
+ga_service_account_secret_pad <- "/etc/secrets/ga4-service-account.json"
 
 message("Debug: verwacht bestand op: ", ga_service_account_secret_pad)
 message("Debug: bestaat bestand? ", file.exists(ga_service_account_secret_pad))
