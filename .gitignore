@@ -1,4 +1,4 @@
 # *.duckdb
-
 data/raw/
 .Rproj.user
+.secrets

@@ -1,0 +1,10 @@
+name: dataplatform
+title:
+username: vanduinkerken
+account: vanduinkerken
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 17527262
+bundleId: 12160196
+url: https://vanduinkerken.shinyapps.io/dataplatform/
+version: 1
