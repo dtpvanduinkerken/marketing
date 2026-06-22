@@ -102,11 +102,14 @@ if (nzchar(ga_token_base64)) {
     token_object <- readRDS(token_pad)
     # gargle probeert standaard ook een schijf-cache te raadplegen op een
     # pad dat is vastgelegd toen het token lokaal werd aangemaakt
-    # (".secrets/<hash>_email"). Dat pad bestaat niet op de server, wat
-    # de hele authenticatie laat mislukken ondanks een geldig token.
-    # Door de cache uit te zetten gebruikt gargle direct het token dat
-    # we hier expliciet meegeven ("bring your own token").
+    # (".secrets/<hash>_email"). Dat pad zit ingebakken in het
+    # tokenobject zelf (cache_path-veld), dus de globale optie
+    # gargle_oauth_cache alleen is niet genoeg - we zetten het direct
+    # op het object uit zodat het token zonder schijf-cache gebruikt wordt.
     options(gargle_oauth_cache = FALSE)
+    if (!is.null(token_object$cache_path)) {
+      token_object$cache_path <- FALSE
+    }
     googleAnalyticsR::ga_auth(token = token_object)
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via OAuth-token.")
@@ -145,7 +148,7 @@ if (nzchar(ga_token_base64)) {
 # nergens bestaat, vallen we terug op de environment variable of een
 # relatief standaardpad.
 if (!exists("DB_PAD", inherits = FALSE) || is.null(DB_PAD) || !nzchar(DB_PAD)) {
-  DB_PAD <- Sys.getenv("DB_PAD", unset = "warehouse.duckdb")
+  DB_PAD <- Sys.getenv("DB_PAD", unset = "bedrijf.duckdb")
 }
 if (!file.exists(DB_PAD)) {
   stop("Databasebestand niet gevonden op pad: '", DB_PAD,
