@@ -54,12 +54,36 @@ if (!file.exists(DB_PAD)) {
 
 website_data_beschikbaar <- FALSE
 
-ga_token_base64 <- Sys.getenv("GA_TOKEN_BASE64", unset = "")
-ga_auth_json     <- Sys.getenv("GA_AUTH_JSON_PATH", unset = "")
+# Primaire bron: Secret File op een vast pad (betrouwbaarder voor lange
+# tekst dan een environment variable). Fallback: environment variable.
+ga_token_secret_file_pad <- "/etc/secrets/ga_token_base64.txt"
+ga_token_base64 <- ""
 
-# Debug: toont alleen de LENGTE van de variabele, nooit de inhoud zelf.
-message("Debug: lengte van GA_TOKEN_BASE64 = ", nchar(ga_token_base64), " karakters.")
+if (file.exists(ga_token_secret_file_pad)) {
+  ga_token_base64 <- trimws(paste(readLines(ga_token_secret_file_pad, warn = FALSE), collapse = ""))
+  message("Debug: GA_TOKEN_BASE64 gelezen vanuit Secret File (", ga_token_secret_file_pad, ").")
+} else {
+  ga_token_base64 <- Sys.getenv("GA_TOKEN_BASE64", unset = "")
+  message("Debug: Secret File niet gevonden op ", ga_token_secret_file_pad,
+          ", terugvallen op environment variable GA_TOKEN_BASE64.")
+}
+
+ga_auth_json <- Sys.getenv("GA_AUTH_JSON_PATH", unset = "")
+
+# Debug: toont alleen de LENGTE van de waarde, nooit de inhoud zelf.
+message("Debug: lengte van ga_token_base64 (na inlezen) = ", nchar(ga_token_base64), " karakters.")
 message("Debug: lengte van GA_AUTH_JSON_PATH = ", nchar(ga_auth_json), " karakters.")
+
+# Extra debug: toon ALLE environment variable NAMEN (niet de waarden) die
+# 'GA', 'TOKEN' of 'GOOGLE' bevatten, om te zien hoe Render variabelen
+# daadwerkelijk doorgeeft aan dit proces.
+alle_env_namen <- names(Sys.getenv())
+relevante_namen <- alle_env_namen[grepl("GA|TOKEN|GOOGLE", alle_env_namen, ignore.case = TRUE)]
+message("Debug: gevonden environment variable NAMEN die mogelijk relevant zijn: ",
+        if (length(relevante_namen) > 0) paste(relevante_namen, collapse = ", ") else "(geen gevonden)")
+message("Debug: totaal aantal environment variables beschikbaar: ", length(alle_env_namen))
+message("Debug: bestaat /etc/secrets? ", dir.exists("/etc/secrets"),
+        " | inhoud: ", if (dir.exists("/etc/secrets")) paste(list.files("/etc/secrets"), collapse = ", ") else "n.v.t.")
 
 if (nzchar(ga_token_base64)) {
   
@@ -68,7 +92,7 @@ if (nzchar(ga_token_base64)) {
     writeBin(base64enc::base64decode(ga_token_base64), token_pad)
     googleAnalyticsR::ga_auth(token = token_pad)
     website_data_beschikbaar <- TRUE
-    message("Google Analytics authenticatie gelukt via OAuth-token (base64).")
+    message("Google Analytics authenticatie gelukt via OAuth-token.")
   }, error = function(e) {
     message("Google Analytics authenticatie via token mislukt: ", conditionMessage(e))
   })
