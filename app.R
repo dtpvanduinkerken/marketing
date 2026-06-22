@@ -109,8 +109,9 @@ if (nzchar(ga_service_account_pad)) {
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via service account.")
   }, error = function(e) {
-    ga4_fout_melding <<- conditionMessage(e)
-    message("Google Analytics authenticatie via service account mislukt: ", conditionMessage(e))
+    ga4_fout_melding <<- paste(capture.output(str(e)), collapse = " ")
+    message("VOLLEDIGE GA4 FOUT:")
+    print(e)
   })
   
 } else {
