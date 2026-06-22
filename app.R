@@ -100,6 +100,13 @@ if (nzchar(ga_token_base64)) {
     # account-specifieke suffix achter, wat tot een 'Not a directory'
     # fout leidt zodra het pad zelf al naar een bestand verwijst.
     token_object <- readRDS(token_pad)
+    # gargle probeert standaard ook een schijf-cache te raadplegen op een
+    # pad dat is vastgelegd toen het token lokaal werd aangemaakt
+    # (".secrets/<hash>_email"). Dat pad bestaat niet op de server, wat
+    # de hele authenticatie laat mislukken ondanks een geldig token.
+    # Door de cache uit te zetten gebruikt gargle direct het token dat
+    # we hier expliciet meegeven ("bring your own token").
+    options(gargle_oauth_cache = FALSE)
     googleAnalyticsR::ga_auth(token = token_object)
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via OAuth-token.")
@@ -132,7 +139,14 @@ if (nzchar(ga_token_base64)) {
 # DB_PAD: relatief pad naar het DuckDB-bestand in de app-map. Kan via de
 # environment variable DB_PAD overschreven worden (bv. op een server met
 # een ander deploy-pad), met "warehouse.duckdb" als standaardwaarde.
-DB_PAD <- Sys.getenv("DB_PAD", unset = "warehouse.duckdb")
+# DB_PAD: pad naar het DuckDB-bestand. Als dit al ergens anders is
+# gedefinieerd (bv. in een global.R die Shiny automatisch vóór app.R
+# inleest), laten we die waarde ongemoeid. Alleen als DB_PAD nog
+# nergens bestaat, vallen we terug op de environment variable of een
+# relatief standaardpad.
+if (!exists("DB_PAD", inherits = FALSE) || is.null(DB_PAD) || !nzchar(DB_PAD)) {
+  DB_PAD <- Sys.getenv("DB_PAD", unset = "warehouse.duckdb")
+}
 if (!file.exists(DB_PAD)) {
   stop("Databasebestand niet gevonden op pad: '", DB_PAD,
        "'. Werkdirectory is: ", getwd(),
