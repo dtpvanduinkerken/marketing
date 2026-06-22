@@ -5,7 +5,6 @@ library(duckdb)
 library(plotly)
 library(dplyr)
 library(googleAnalyticsR)
-library(base64enc)
 
 # --------------------------------------------------
 # CONSTANTEN
@@ -32,106 +31,83 @@ tryCatch({
 
 
 # --------------------------------------------------
-# GOOGLE ANALYTICS AUTHENTICATIE (OAUTH-TOKEN, GEEN SERVICE ACCOUNT)
+# GOOGLE ANALYTICS AUTHENTICATIE (SERVICE ACCOUNT)
 # --------------------------------------------------
 # Op een server (Render, Docker, etc.) is geen browser beschikbaar, dus
 # interactieve ga_auth() werkt niet en doet de hele app crashen bij opstart.
 #
-# Aanpak: het token wordt EENMALIG lokaal gegenereerd (zie README.md,
-# sectie "OAuth-token genereren zonder service account"), als base64-tekst
-# in een environment variable gezet, en hier bij het opstarten van de app
-# gedecodeerd naar een .rds bestand dat googleAnalyticsR inleest.
+# Aanpak: de service account JSON-key wordt als Secret File op een vast
+# pad aangeleverd (rauw JSON-bestand, geen base64-encoding nodig omdat
+# Secret Files op Render het volledige bestand al ongewijzigd opslaan).
+# googleAnalyticsR leest dat bestand rechtstreeks in via ga_auth(json_file=).
 #
-# Verwacht: environment variable GA_TOKEN_BASE64 met de base64-inhoud van
-# het .rds tokenbestand.
+# Belangrijk: het service account moet in de GA4-property zelf zijn
+# toegevoegd als gebruiker (Admin > Property Access Management) met
+# minimaal "Viewer"-rechten, anders krijg je een 403 op de ga_data()-calls.
 #
-# (Optioneel, niet gebruikt hier maar laten staan als toekomstige optie:
-#  GA_AUTH_JSON_PATH voor een service-account JSON-bestand.)
+# Verwacht: Secret File op /etc/secrets/ga_service_account.json met de
+# inhoud van de service-account JSON-key uit Google Cloud Console.
+# Fallback: environment variable GA_AUTH_JSON_PATH die naar een eigen pad
+# wijst, voor het geval het Secret File-pad afwijkt.
 
 website_data_beschikbaar <- FALSE
 ga4_fout_melding <- NULL
 
-# Primaire bron: Secret File op een vast pad (betrouwbaarder voor lange
-# tekst dan een environment variable). Fallback: environment variable.
-ga_token_secret_file_pad <- "/etc/secrets/ga_token_base64.txt"
-ga_token_base64 <- ""
+# Primaire bron: Secret File op een vast pad.
+ga_service_account_secret_pad <- "/etc/secrets/ga_service_account.json"
 
-if (file.exists(ga_token_secret_file_pad)) {
-  ga_token_base64 <- trimws(paste(readLines(ga_token_secret_file_pad, warn = FALSE), collapse = ""))
-  message("Debug: GA_TOKEN_BASE64 gelezen vanuit Secret File (", ga_token_secret_file_pad, ").")
-}
-
-# Val terug op de environment variable als het Secret File niet bestaat
-# OF wel bestaat maar leeg/onbruikbaar is (bv. verkeerd pad/bestandsnaam
-# bij het aanmaken van het Secret File op Render, of een lege upload).
-if (!nzchar(ga_token_base64)) {
-  ga_token_base64 <- trimws(Sys.getenv("GA_TOKEN_BASE64", unset = ""))
-  message("Debug: Secret File leeg of niet gevonden op ", ga_token_secret_file_pad,
-          ", terugvallen op environment variable GA_TOKEN_BASE64.")
-}
-
+# Fallback: environment variable met een (eventueel afwijkend) pad naar
+# het service-account JSON-bestand.
 ga_auth_json <- Sys.getenv("GA_AUTH_JSON_PATH", unset = "")
 
-# Debug: toont alleen de LENGTE van de waarde, nooit de inhoud zelf.
-message("Debug: lengte van ga_token_base64 (na inlezen) = ", nchar(ga_token_base64), " karakters.")
-message("Debug: lengte van GA_AUTH_JSON_PATH = ", nchar(ga_auth_json), " karakters.")
+ga_service_account_pad <- ""
+
+if (file.exists(ga_service_account_secret_pad)) {
+  ga_service_account_pad <- ga_service_account_secret_pad
+  message("Debug: service-account JSON gevonden via Secret File (", ga_service_account_secret_pad, ").")
+} else if (nzchar(ga_auth_json) && file.exists(ga_auth_json)) {
+  ga_service_account_pad <- ga_auth_json
+  message("Debug: Secret File niet gevonden op ", ga_service_account_secret_pad,
+          ", terugvallen op GA_AUTH_JSON_PATH (", ga_auth_json, ").")
+} else {
+  message("Debug: geen service-account JSON gevonden op Secret File-pad (",
+          ga_service_account_secret_pad, ") en GA_AUTH_JSON_PATH is leeg of bestaat niet.")
+}
+
+# Debug: toont alleen pad en bestandsgrootte, nooit de inhoud van de key.
+if (nzchar(ga_service_account_pad)) {
+  message("Debug: service-account bestandsgrootte = ",
+          file.size(ga_service_account_pad), " bytes.")
+}
 
 # Extra debug: toon ALLE environment variable NAMEN (niet de waarden) die
-# 'GA', 'TOKEN' of 'GOOGLE' bevatten, om te zien hoe Render variabelen
-# daadwerkelijk doorgeeft aan dit proces.
+# 'GA' of 'GOOGLE' bevatten, om te zien hoe Render variabelen daadwerkelijk
+# doorgeeft aan dit proces.
 alle_env_namen <- names(Sys.getenv())
-relevante_namen <- alle_env_namen[grepl("GA|TOKEN|GOOGLE", alle_env_namen, ignore.case = TRUE)]
+relevante_namen <- alle_env_namen[grepl("GA|GOOGLE", alle_env_namen, ignore.case = TRUE)]
 message("Debug: gevonden environment variable NAMEN die mogelijk relevant zijn: ",
         if (length(relevante_namen) > 0) paste(relevante_namen, collapse = ", ") else "(geen gevonden)")
-message("Debug: totaal aantal environment variables beschikbaar: ", length(alle_env_namen))
 message("Debug: bestaat /etc/secrets? ", dir.exists("/etc/secrets"),
         " | inhoud: ", if (dir.exists("/etc/secrets")) paste(list.files("/etc/secrets"), collapse = ", ") else "n.v.t.")
 
-if (nzchar(ga_token_base64)) {
+if (nzchar(ga_service_account_pad)) {
   
   tryCatch({
-    token_pad <- file.path(tempdir(), "ga_token.rds")
-    writeBin(base64enc::base64decode(ga_token_base64), token_pad)
-    
-    # Belangrijk: het .rds bestand zelf inlezen met readRDS() en het
-    # resulterende TOKEN-OBJECT (niet het bestandspad!) doorgeven aan
-    # ga_auth(). Als je een pad-string doorgeeft, behandelt gargle dat
-    # soms als een cache-bestandsnaam-aanduiding en plakt er intern een
-    # account-specifieke suffix achter, wat tot een 'Not a directory'
-    # fout leidt zodra het pad zelf al naar een bestand verwijst.
-    token_object <- readRDS(token_pad)
-    # gargle probeert standaard ook een schijf-cache te raadplegen op een
-    # pad dat is vastgelegd toen het token lokaal werd aangemaakt
-    # (".secrets/<hash>_email"). Dat pad zit ingebakken in het
-    # tokenobject zelf (cache_path-veld), dus de globale optie
-    # gargle_oauth_cache alleen is niet genoeg - we zetten het direct
-    # op het object uit zodat het token zonder schijf-cache gebruikt wordt.
+    # Geen schijf-cache nodig/gewenst bij service accounts; voorkomt dat
+    # gargle een cache-bestand probeert te schrijven op een read-only
+    # filesystem (zoals het mountpoint van een Secret File).
     options(gargle_oauth_cache = FALSE)
-    if (!is.null(token_object$cache_path)) {
-      token_object$cache_path <- FALSE
-    }
-    googleAnalyticsR::ga_auth(token = token_object)
-    website_data_beschikbaar <- TRUE
-    message("Google Analytics authenticatie gelukt via OAuth-token.")
-  }, error = function(e) {
-    ga4_fout_melding <<- conditionMessage(e)
-    message("Google Analytics authenticatie via token mislukt: ", conditionMessage(e))
-  })
-  
-} else if (nzchar(ga_auth_json) && file.exists(ga_auth_json)) {
-  
-  tryCatch({
-    googleAnalyticsR::ga_auth(json_file = ga_auth_json)
+    googleAnalyticsR::ga_auth(json_file = ga_service_account_pad)
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via service account.")
   }, error = function(e) {
     ga4_fout_melding <<- conditionMessage(e)
-    message("Google Analytics authenticatie mislukt: ", conditionMessage(e))
+    message("Google Analytics authenticatie via service account mislukt: ", conditionMessage(e))
   })
   
 } else {
-  ga4_fout_melding <- "Geen GA_TOKEN_BASE64 of GA_AUTH_JSON_PATH gevonden op de server."
-  message("Geen GA_TOKEN_BASE64 of GA_AUTH_JSON_PATH gevonden. ",
+  ga4_fout_melding <- "Geen service-account JSON gevonden op de server (Secret File of GA_AUTH_JSON_PATH)."
+  message("Geen service-account JSON gevonden. ",
           "Website/Website Pilot tabs draaien zonder live GA-data.")
 }
 
