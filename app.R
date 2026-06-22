@@ -49,6 +49,7 @@ tryCatch({
 #  GA_AUTH_JSON_PATH voor een service-account JSON-bestand.)
 
 website_data_beschikbaar <- FALSE
+ga4_fout_melding <- NULL
 
 # Primaire bron: Secret File op een vast pad (betrouwbaarder voor lange
 # tekst dan een environment variable). Fallback: environment variable.
@@ -98,6 +99,7 @@ if (nzchar(ga_token_base64)) {
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via OAuth-token.")
   }, error = function(e) {
+    ga4_fout_melding <<- conditionMessage(e)
     message("Google Analytics authenticatie via token mislukt: ", conditionMessage(e))
   })
   
@@ -108,10 +110,12 @@ if (nzchar(ga_token_base64)) {
     website_data_beschikbaar <- TRUE
     message("Google Analytics authenticatie gelukt via service account.")
   }, error = function(e) {
+    ga4_fout_melding <<- conditionMessage(e)
     message("Google Analytics authenticatie mislukt: ", conditionMessage(e))
   })
   
 } else {
+  ga4_fout_melding <- "Geen GA_TOKEN_BASE64 of GA_AUTH_JSON_PATH gevonden op de server."
   message("Geen GA_TOKEN_BASE64 of GA_AUTH_JSON_PATH gevonden. ",
           "Website/Website Pilot tabs draaien zonder live GA-data.")
 }
@@ -119,6 +123,17 @@ if (nzchar(ga_token_base64)) {
 # --------------------------------------------------
 # DATABASE
 # --------------------------------------------------
+
+# DB_PAD: relatief pad naar het DuckDB-bestand in de app-map. Kan via de
+# environment variable DB_PAD overschreven worden (bv. op een server met
+# een ander deploy-pad), met "warehouse.duckdb" als standaardwaarde.
+DB_PAD <- Sys.getenv("DB_PAD", unset = "bedrijf.duckdb")
+if (!file.exists(DB_PAD)) {
+  stop("Databasebestand niet gevonden op pad: '", DB_PAD,
+       "'. Werkdirectory is: ", getwd(),
+       ". Zet evt. de environment variable DB_PAD naar het juiste pad.")
+}
+message("Debug: DuckDB-bestand wordt geladen vanaf: ", normalizePath(DB_PAD))
 
 con <- dbConnect(duckdb::duckdb(), DB_PAD)
 onStop(function() dbDisconnect(con, shutdown = TRUE))
@@ -334,6 +349,7 @@ veilige_ga_data <- function(expr) {
   # of als er geen GA-auth beschikbaar is.
   if (!website_data_beschikbaar) return(NULL)
   tryCatch(expr, error = function(e) {
+    ga4_fout_melding <<- conditionMessage(e)
     message("GA-call mislukt: ", conditionMessage(e))
     NULL
   })
@@ -851,6 +867,7 @@ ui <- dashboardPage(
         tabName = "website",
         
         h2("Website Analytics"),
+        uiOutput("ga4_status_banner"),
         
         fluidRow(
           column(3, kpi_card("Gebruikers", format_number(data$website_kpis$activeUsers))),
@@ -889,6 +906,7 @@ ui <- dashboardPage(
         tabName = "website_pilot",
         
         h2("Website Pilot Analyse"),
+        uiOutput("ga4_status_banner_pilot"),
         
         fluidRow(
           column(3, kpi_card("Add To Cart stijging", textOutput("pilot_add_to_cart"))),
@@ -1444,6 +1462,25 @@ server <- function(input, output, session) {
         yaxis = list(title = "")
       )
   })
+  
+  # GA4 STATUSBALK
+  # Toont direct in het dashboard of GA4 live-data beschikbaar is, in
+  # plaats van dat je dit alleen in de server-logs kunt zien.
+  ga4_status_ui <- renderUI({
+    if (website_data_beschikbaar) {
+      div(style = "padding:10px 15px;margin-bottom:15px;border-radius:6px;
+                   background:#eaf5d8;color:#3d5c0f;border:1px solid #c5e07a;",
+          icon("circle-check"), " GA4-data succesvol opgehaald.")
+    } else {
+      div(style = "padding:10px 15px;margin-bottom:15px;border-radius:6px;
+                   background:#fdecea;color:#7a1f1f;border:1px solid #f5c2c0;",
+          icon("triangle-exclamation"),
+          " Geen live GA4-data beschikbaar. ",
+          if (!is.null(ga4_fout_melding)) paste0("Oorzaak: ", ga4_fout_melding) else "")
+    }
+  })
+  output$ga4_status_banner <- ga4_status_ui
+  output$ga4_status_banner_pilot <- ga4_status_ui
   
   output$website_bezoekers_plot <- renderPlotly({
     
