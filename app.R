@@ -56,6 +56,14 @@ ga4_fout_melding <- NULL
 # Primaire bron: Secret File op een vast pad.
 ga_service_account_secret_pad <- "/DataPlatform/secrets/ga4-service-account.json"
 
+message("Debug: verwacht bestand op: ", ga_service_account_secret_pad)
+message("Debug: bestaat bestand? ", file.exists(ga_service_account_secret_pad))
+
+if (file.exists(ga_service_account_secret_pad)) {
+  message("Debug: bestandsgrootte = ",
+          file.size(ga_service_account_secret_pad), " bytes")
+}
+
 # Fallback: environment variable met een (eventueel afwijkend) pad naar
 # het service-account JSON-bestand.
 ga_auth_json <- Sys.getenv("GA_AUTH_JSON_PATH", unset = "")
