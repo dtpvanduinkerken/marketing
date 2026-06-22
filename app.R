@@ -59,9 +59,14 @@ ga_token_base64 <- ""
 if (file.exists(ga_token_secret_file_pad)) {
   ga_token_base64 <- trimws(paste(readLines(ga_token_secret_file_pad, warn = FALSE), collapse = ""))
   message("Debug: GA_TOKEN_BASE64 gelezen vanuit Secret File (", ga_token_secret_file_pad, ").")
-} else {
-  ga_token_base64 <- Sys.getenv("GA_TOKEN_BASE64", unset = "")
-  message("Debug: Secret File niet gevonden op ", ga_token_secret_file_pad,
+}
+
+# Val terug op de environment variable als het Secret File niet bestaat
+# OF wel bestaat maar leeg/onbruikbaar is (bv. verkeerd pad/bestandsnaam
+# bij het aanmaken van het Secret File op Render, of een lege upload).
+if (!nzchar(ga_token_base64)) {
+  ga_token_base64 <- trimws(Sys.getenv("GA_TOKEN_BASE64", unset = ""))
+  message("Debug: Secret File leeg of niet gevonden op ", ga_token_secret_file_pad,
           ", terugvallen op environment variable GA_TOKEN_BASE64.")
 }
 
@@ -127,7 +132,7 @@ if (nzchar(ga_token_base64)) {
 # DB_PAD: relatief pad naar het DuckDB-bestand in de app-map. Kan via de
 # environment variable DB_PAD overschreven worden (bv. op een server met
 # een ander deploy-pad), met "warehouse.duckdb" als standaardwaarde.
-DB_PAD <- Sys.getenv("DB_PAD", unset = "bedrijf.duckdb")
+DB_PAD <- Sys.getenv("DB_PAD", unset = "warehouse.duckdb")
 if (!file.exists(DB_PAD)) {
   stop("Databasebestand niet gevonden op pad: '", DB_PAD,
        "'. Werkdirectory is: ", getwd(),
