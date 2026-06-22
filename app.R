@@ -16,51 +16,6 @@ KLEUR_TERTIAIR  <- "#4d7e12"
 KLEUR_LICHT     <- "#c5e07a"
 DB_PAD <- "bedrijf.duckdb"
 
-GA_PROPERTY_ID  <- 314034198
-GA_TOKEN_PAD    <- ".secrets/ga_token.rds"  # zelf lokaal aanmaken, zie instructies
-
-# --------------------------------------------------
-# GOOGLE ANALYTICS AUTHENTICATIE (zonder service account)
-# --------------------------------------------------
-# Belangrijk: op een server (zoals Render) kan googleAnalyticsR niet interactief
-# inloggen via de browser. We gebruiken daarom een vooraf lokaal gegenereerd
-# token-bestand (.rds), dat je zelf eenmalig aanmaakt met:
-#
-#   library(googleAnalyticsR)
-#   ga_auth(email = "jouw_email@gmail.com")
-#
-# Dit slaat een token op. Kopieer/hernoem dat token-bestand naar het pad in
-# GA_TOKEN_PAD (bv. ".secrets/ga_token.rds") en zorg dat dit bestand mee wordt
-# gepusht naar je (PRIVATE!) GitHub repo, of upload het als secret file op Render.
-#
-# GA_BESCHIKBAAR wordt FALSE als authenticatie faalt, zodat de rest van de app
-# gewoon blijft werken en de Website / Website Pilot tabs een nette melding tonen
-# in plaats van de hele app te laten crashen.
-
-GA_BESCHIKBAAR <- FALSE
-
-tryCatch({
-  if (file.exists(GA_TOKEN_PAD)) {
-    ga_auth(token = GA_TOKEN_PAD)
-    GA_BESCHIKBAAR <- TRUE
-  } else {
-    warning(paste0("GA token niet gevonden op '", GA_TOKEN_PAD,
-                   "'. Website-tabs draaien zonder live GA-data."))
-  }
-}, error = function(e) {
-  warning(paste0("GA authenticatie mislukt: ", conditionMessage(e)))
-})
-
-# Veilige wrapper rond ga_data(): geeft een lege tibble terug i.p.v. te crashen
-veilige_ga_data <- function(...) {
-  if (!GA_BESCHIKBAAR) return(data.frame())
-  tryCatch({
-    ga_data(...)
-  }, error = function(e) {
-    warning(paste0("GA-call mislukt: ", conditionMessage(e)))
-    data.frame()
-  })
-}
 
 # --------------------------------------------------
 # DATABASE
@@ -69,34 +24,19 @@ veilige_ga_data <- function(...) {
 con <- dbConnect(duckdb::duckdb(), DB_PAD)
 onStop(function() dbDisconnect(con, shutdown = TRUE))
 
-# Veilige wrapper rond dbGetQuery(): geeft lege dataframe terug i.p.v. te crashen,
-# zodat 1 kapotte query niet de hele app onderuit haalt
-veilige_query <- function(con, sql) {
-  tryCatch({
-    dbGetQuery(con, sql)
-  }, error = function(e) {
-    warning(paste0("Database query mislukt: ", conditionMessage(e),
-                   "\nQuery: ", substr(sql, 1, 120)))
-    data.frame()
-  })
-}
-
 # --------------------------------------------------
 # HELPER: OPMAAK
 # --------------------------------------------------
 
 format_euro <- function(x) {
-  if (length(x) == 0 || is.null(x) || all(is.na(x))) return("\u20ac 0")
   paste0("\u20ac ", format(round(x, 0), big.mark = ".", decimal.mark = ","))
 }
 
 format_number <- function(x) {
-  if (length(x) == 0 || is.null(x) || all(is.na(x))) return("0")
   format(round(x, 0), big.mark = ".", decimal.mark = ",")
 }
 
 format_percentage <- function(x) {
-  if (length(x) == 0 || is.null(x) || all(is.na(x))) return("0%")
   paste0(format(round(x, 1), big.mark = ".", decimal.mark = ","), "%")
 }
 
@@ -262,67 +202,61 @@ kpi_card <- function(titel, waarde, trend_class = NULL,
   )
 }
 
-# Nette "geen data" melding voor een tab/sectie, in plaats van een crash
-geen_data_melding <- function(tekst = "Data is momenteel niet beschikbaar.") {
-  div(class = "placeholder-melding",
-      icon("triangle-exclamation"), p(tekst))
-}
-
 # --------------------------------------------------
 # DATA LADEN
 # --------------------------------------------------
 
 load_data <- function() {
   
-  pricing <- veilige_query(con, "SELECT * FROM mart.kpi_personal_pricing")
-  klanten <- veilige_query(con, "SELECT * FROM mart.klant_kpis")
-  marketing <- veilige_query(con, "SELECT * FROM mart.newsletter_kpis")
-  afspraken <- veilige_query(con, "SELECT * FROM mart.afspraken_kpis")
-  woonplaats <- veilige_query(con,
-                              "SELECT * FROM mart.omzet_per_woonplaats ORDER BY omzet DESC LIMIT 10")
-  omzet_per_maand <- veilige_query(con,
-                                   "SELECT * FROM mart.omzet_per_maand ORDER BY maand")
-  pricing_performance <- veilige_query(con,
-                                       "SELECT * FROM mart.pricing_performance ORDER BY omzet DESC")
-  members_kpis <- veilige_query(con, "SELECT * FROM mart.members_kpis")
-  klantgedrag <- veilige_query(con, "SELECT * FROM mart.klantgedrag")
-  woonplaats_members <- veilige_query(con,
-                                      "SELECT woonplaats, klanten, omzet, omzet_per_klant
+  pricing <- dbGetQuery(con, "SELECT * FROM mart.kpi_personal_pricing")
+  klanten <- dbGetQuery(con, "SELECT * FROM mart.klant_kpis")
+  marketing <- dbGetQuery(con, "SELECT * FROM mart.newsletter_kpis")
+  afspraken <- dbGetQuery(con, "SELECT * FROM mart.afspraken_kpis")
+  woonplaats <- dbGetQuery(con,
+                           "SELECT * FROM mart.omzet_per_woonplaats ORDER BY omzet DESC LIMIT 10")
+  omzet_per_maand <- dbGetQuery(con,
+                                "SELECT * FROM mart.omzet_per_maand ORDER BY maand")
+  pricing_performance <- dbGetQuery(con,
+                                    "SELECT * FROM mart.pricing_performance ORDER BY omzet DESC")
+  members_kpis <- dbGetQuery(con, "SELECT * FROM mart.members_kpis")
+  klantgedrag <- dbGetQuery(con, "SELECT * FROM mart.klantgedrag")
+  woonplaats_members <- dbGetQuery(con,
+                                   "SELECT woonplaats, klanten, omzet, omzet_per_klant
      FROM mart.omzet_per_woonplaats ORDER BY omzet DESC LIMIT 10")
-  newsletter_campagnes <- veilige_query(con,
-                                        "SELECT * FROM raw.newsletters ORDER BY datum DESC")
-  afspraken_per_dienst <- veilige_query(con,
-                                        "SELECT dienst, COUNT(*) AS totaal FROM raw.afspraken
+  newsletter_campagnes <- dbGetQuery(con,
+                                     "SELECT * FROM raw.newsletters ORDER BY datum DESC")
+  afspraken_per_dienst <- dbGetQuery(con,
+                                     "SELECT dienst, COUNT(*) AS totaal FROM raw.afspraken
      GROUP BY dienst ORDER BY totaal DESC")
-  afspraken_kpis_detail <- veilige_query(con, "
+  afspraken_kpis_detail <- dbGetQuery(con, "
 SELECT
   COUNT(*) AS totaal_afspraken,
   COUNT(DISTINCT dienst) AS aantal_diensten
 FROM raw.afspraken
 ")
-  members_groei <- veilige_query(con,
-                                 "SELECT * FROM mart.members_groei ORDER BY maand")
-  afspraken_over_tijd <- veilige_query(con,
-                                       "SELECT DATE_TRUNC('month', datum) AS maand, COUNT(*) AS totaal
+  members_groei <- dbGetQuery(con,
+                              "SELECT * FROM mart.members_groei ORDER BY maand")
+  afspraken_over_tijd <- dbGetQuery(con,
+                                    "SELECT DATE_TRUNC('month', datum) AS maand, COUNT(*) AS totaal
      FROM raw.afspraken GROUP BY DATE_TRUNC('month', datum) ORDER BY maand")
-  social_media_kpis <- veilige_query(con, "SELECT * FROM mart.social_media_kpis")
-  social_media_platform <- veilige_query(con, "SELECT * FROM mart.social_media_platform")
-  social_media_volgergroei <- veilige_query(con,
-                                            "SELECT * FROM mart.social_media_volgergroei")
-  social_media_volgers <- veilige_query(con,
-                                        "SELECT * FROM mart.social_media_volgers ORDER BY datum")
-  post_type_performance <- veilige_query(con,
-                                         "SELECT * FROM mart.post_type_performance ORDER BY views DESC")
-  post_performance <- veilige_query(con,
-                                    "SELECT * FROM mart.post_performance ORDER BY datum DESC")
-  coupon_kpis <- veilige_query(con, "SELECT * FROM mart.coupon_kpis")
-  coupon_performance <- veilige_query(con,
-                                      "SELECT * FROM mart.coupon_performance ORDER BY omzet DESC")
-  coupon_maand <- veilige_query(con, "SELECT * FROM mart.coupon_maand ORDER BY maand")
-  coupon_detail <- veilige_query(con, "SELECT * FROM raw.coupons")
+  social_media_kpis <- dbGetQuery(con, "SELECT * FROM mart.social_media_kpis")
+  social_media_platform <- dbGetQuery(con, "SELECT * FROM mart.social_media_platform")
+  social_media_volgergroei <- dbGetQuery(con,
+                                         "SELECT * FROM mart.social_media_volgergroei")
+  social_media_volgers <- dbGetQuery(con,
+                                     "SELECT * FROM mart.social_media_volgers ORDER BY datum")
+  post_type_performance <- dbGetQuery(con,
+                                      "SELECT * FROM mart.post_type_performance ORDER BY views DESC")
+  post_performance <- dbGetQuery(con,
+                                 "SELECT * FROM mart.post_performance ORDER BY datum DESC")
+  coupon_kpis <- dbGetQuery(con, "SELECT * FROM mart.coupon_kpis")
+  coupon_performance <- dbGetQuery(con,
+                                   "SELECT * FROM mart.coupon_performance ORDER BY omzet DESC")
+  coupon_maand <- dbGetQuery(con, "SELECT * FROM mart.coupon_maand ORDER BY maand")
+  coupon_detail <- dbGetQuery(con, "SELECT * FROM raw.coupons")
   
   # Nieuwe members afgelopen 7 dagen vs de 7 dagen daarvoor (op basis van raw.members.aanmelddatum)
-  members_nieuw_7d <- veilige_query(con, "
+  members_nieuw_7d <- dbGetQuery(con, "
     SELECT
       SUM(CASE WHEN aanmelddatum > CURRENT_DATE - INTERVAL 7 DAY
                 AND aanmelddatum <= CURRENT_DATE THEN 1 ELSE 0 END) AS afgelopen_7d,
@@ -332,7 +266,7 @@ FROM raw.afspraken
   ")
   
   # Actieve vs slapende members op basis van laatste_aankoop (>90 dagen = slapend)
-  members_actief_slapend <- veilige_query(con, "
+  members_actief_slapend <- dbGetQuery(con, "
     SELECT
       CASE WHEN laatste_aankoop IS NULL THEN 'Slapend'
            WHEN laatste_aankoop < CURRENT_DATE - INTERVAL 90 DAY THEN 'Slapend'
@@ -343,115 +277,117 @@ FROM raw.afspraken
     GROUP BY status
   ")
   
-  # ---- GOOGLE ANALYTICS (alles via veilige_ga_data, crasht niet meer de app) ----
-  
-  website_kpis <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_kpis <- ga_data(
+    propertyId = 314034198,
     date_range = c("30daysAgo", "today"),
     metrics    = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
   )
-  website_dagelijks <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID, date_range = c("30daysAgo", "today"),
+  website_dagelijks <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
     dimensions = "date", metrics = c("activeUsers", "sessions")
   )
-  website_paginas <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID, date_range = c("30daysAgo", "today"),
+  website_paginas <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
     dimensions = "pagePath", metrics = c("screenPageViews"), limit = 20
   )
-  website_bronnen <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID, date_range = c("30daysAgo", "today"),
+  website_bronnen <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
     dimensions = "sessionSource", metrics = c("sessions"), limit = 20
   )
-  website_devices <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID, date_range = c("30daysAgo", "today"),
+  website_devices <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
     dimensions = "deviceCategory", metrics = c("activeUsers")
   )
-  website_search_terms <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_search_terms <- ga_data(
+    propertyId = 314034198,
     date_range = c("30daysAgo", "today"),
     dimensions = "searchTerm",
     metrics = c("eventCount"),
     limit = 10
   )
-  
-  website_checkout_funnel_raw <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID, date_range = c("30daysAgo", "today"),
+  website_checkout_funnel <- ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
     dimensions = "eventName", metrics = c("eventCount")
-  )
-  website_checkout_funnel <- if (nrow(website_checkout_funnel_raw) > 0) {
-    website_checkout_funnel_raw |>
-      dplyr::filter(eventName %in% c(
-        "page_view", "view_item", "add_to_cart", "begin_checkout", "purchase"
-      ))
-  } else {
-    data.frame(eventName = character(), eventCount = numeric())
-  }
+  ) |>
+    dplyr::filter(eventName %in% c(
+      "page_view", "view_item", "add_to_cart", "begin_checkout", "purchase"
+    ))
   
   # WEBSITE PILOT - VOOR
-  website_pilot_voor <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_voor <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-04-28", "2025-05-27"),
-    metrics = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
+    metrics = c(
+      "activeUsers",
+      "sessions",
+      "screenPageViews",
+      "engagementRate"
+    )
   )
   
-  website_pilot_funnel_voor_raw <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_funnel_voor <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-04-28", "2025-05-27"),
     dimensions = "eventName",
     metrics = c("eventCount")
-  )
-  website_pilot_funnel_voor <- if (nrow(website_pilot_funnel_voor_raw) > 0) {
-    website_pilot_funnel_voor_raw |>
-      filter(eventName %in% c("page_view", "view_item", "add_to_cart",
-                              "begin_checkout", "purchase"))
-  } else {
-    data.frame(eventName = character(), eventCount = numeric())
-  }
+  ) |>
+    filter(eventName %in% c(
+      "page_view",
+      "view_item",
+      "add_to_cart",
+      "begin_checkout",
+      "purchase"
+    ))
   
-  website_pilot_devices_voor <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_devices_voor <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-04-28", "2025-05-27"),
     dimensions = "deviceCategory",
     metrics = c("sessions")
   )
   
-  website_pilot_dagelijks_voor <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_dagelijks_voor <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-04-28", "2025-05-27"),
     dimensions = "date",
     metrics = c("sessions")
   )
   
   # WEBSITE PILOT - NA
-  website_pilot_na <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_na <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-05-28", "2025-06-28"),
-    metrics = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
+    metrics = c(
+      "activeUsers",
+      "sessions",
+      "screenPageViews",
+      "engagementRate"
+    )
   )
   
-  website_pilot_funnel_na_raw <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_funnel_na <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-05-28", "2025-06-28"),
     dimensions = "eventName",
     metrics = c("eventCount")
-  )
-  website_pilot_funnel_na <- if (nrow(website_pilot_funnel_na_raw) > 0) {
-    website_pilot_funnel_na_raw |>
-      filter(eventName %in% c("page_view", "view_item", "add_to_cart",
-                              "begin_checkout", "purchase"))
-  } else {
-    data.frame(eventName = character(), eventCount = numeric())
-  }
+  ) |>
+    filter(eventName %in% c(
+      "page_view",
+      "view_item",
+      "add_to_cart",
+      "begin_checkout",
+      "purchase"
+    ))
   
-  website_pilot_devices_na <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_devices_na <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-05-28", "2025-06-28"),
     dimensions = "deviceCategory",
     metrics = c("sessions")
   )
   
-  website_pilot_dagelijks_na <- veilige_ga_data(
-    propertyId = GA_PROPERTY_ID,
+  website_pilot_dagelijks_na <- ga_data(
+    propertyId = 314034198,
     date_range = c("2025-05-28", "2025-06-28"),
     dimensions = "date",
     metrics = c("sessions")
@@ -496,23 +432,13 @@ FROM raw.afspraken
 
 data <- load_data()
 
-# Handige checks om te zien of de Website-tabs data hebben
-WEBSITE_DATA_OK <- GA_BESCHIKBAAR && nrow(data$website_kpis) > 0
-PILOT_DATA_OK   <- GA_BESCHIKBAAR && nrow(data$website_pilot_na) > 0
-
 # --------------------------------------------------
 # TREND BEREKENING
 # --------------------------------------------------
 
 bereken_trend <- function(omzet_per_maand) {
-  if (is.null(omzet_per_maand) || nrow(omzet_per_maand) < 2) {
-    return(list(waarde = 0, class = "kpi-trend-up", label = "0%"))
-  }
   laatste_omzet <- tail(omzet_per_maand$omzet, 1)
   vorige_omzet  <- tail(omzet_per_maand$omzet, 2)[1]
-  if (is.na(vorige_omzet) || vorige_omzet == 0) {
-    return(list(waarde = 0, class = "kpi-trend-up", label = "0%"))
-  }
   trend <- round((laatste_omzet - vorige_omzet) / vorige_omzet * 100, 1)
   list(
     waarde = trend,
@@ -525,9 +451,6 @@ omzet_trend <- bereken_trend(data$omzet_per_maand)
 
 # Trend voor nieuwe members afgelopen 7 dagen t.o.v. de 7 dagen daarvoor
 bereken_members_7d_trend <- function(members_nieuw_7d) {
-  if (is.null(members_nieuw_7d) || nrow(members_nieuw_7d) == 0) {
-    return(list(waarde = 0, class = "kpi-trend-up", label = "0%"))
-  }
   afgelopen <- members_nieuw_7d$afgelopen_7d[1]
   vorige    <- members_nieuw_7d$vorige_7d[1]
   if (is.na(afgelopen)) afgelopen <- 0
@@ -624,45 +547,39 @@ ui <- dashboardPage(
       # COUPONS
       tabItem(tabName = "coupons",
               h2("Coupons"),
-              if (nrow(data$coupon_detail) > 0) {
-                tagList(
-                  selectInput("coupon_select", "Selecteer coupon",
-                              choices = sort(unique(data$coupon_detail$coupon_code))),
-                  br(),
-                  fluidRow(
-                    column(3, kpi_card("Omzet",      textOutput("coupon_omzet"))),
-                    column(3, kpi_card("Ingeleverd", textOutput("coupon_ingeleverd"))),
-                    column(3, kpi_card("Verzonden",  textOutput("coupon_verzonden"))),
-                    column(3, kpi_card("Openstaand", textOutput("coupon_openstaand")))
-                  ),
-                  br(),
-                  fluidRow(
-                    box(width = 6, title = "Gebruik per dag",
-                        plotlyOutput("coupon_gebruik_plot", height = "340px")),
-                    box(width = 6, title = "Omzet per dag",
-                        plotlyOutput("coupon_omzet_plot", height = "340px"))
-                  ),
-                  fluidRow(
-                    box(width = 12, title = "Coupon Performance Analyse",
-                        fluidRow(
-                          column(3, kpi_card("Inleverpercentage",
-                                             textOutput("coupon_inleverpercentage"),
-                                             subtitel = "Ingeleverd / Verzonden")),
-                          column(3, kpi_card("Omzet per coupon",
-                                             textOutput("coupon_omzet_per_coupon"),
-                                             subtitel = "Omzet / Ingeleverd")),
-                          column(3, kpi_card("Gem. korting",
-                                             textOutput("coupon_gem_korting"),
-                                             subtitel = "Discount / Ingeleverd")),
-                          column(3, kpi_card("Openstaand %",
-                                             textOutput("coupon_openstaand_pct"),
-                                             subtitel = "Openstaand / Verzonden"))
-                        ))
-                  )
-                )
-              } else {
-                geen_data_melding("Geen coupon-data beschikbaar.")
-              }
+              selectInput("coupon_select", "Selecteer coupon",
+                          choices = sort(unique(data$coupon_detail$coupon_code))),
+              br(),
+              fluidRow(
+                column(3, kpi_card("Omzet",      textOutput("coupon_omzet"))),
+                column(3, kpi_card("Ingeleverd", textOutput("coupon_ingeleverd"))),
+                column(3, kpi_card("Verzonden",  textOutput("coupon_verzonden"))),
+                column(3, kpi_card("Openstaand", textOutput("coupon_openstaand")))
+              ),
+              br(),
+              fluidRow(
+                box(width = 6, title = "Gebruik per dag",
+                    plotlyOutput("coupon_gebruik_plot", height = "340px")),
+                box(width = 6, title = "Omzet per dag",
+                    plotlyOutput("coupon_omzet_plot", height = "340px"))
+              ),
+              fluidRow(
+                box(width = 12, title = "Coupon Performance Analyse",
+                    fluidRow(
+                      column(3, kpi_card("Inleverpercentage",
+                                         textOutput("coupon_inleverpercentage"),
+                                         subtitel = "Ingeleverd / Verzonden")),
+                      column(3, kpi_card("Omzet per coupon",
+                                         textOutput("coupon_omzet_per_coupon"),
+                                         subtitel = "Omzet / Ingeleverd")),
+                      column(3, kpi_card("Gem. korting",
+                                         textOutput("coupon_gem_korting"),
+                                         subtitel = "Discount / Ingeleverd")),
+                      column(3, kpi_card("Openstaand %",
+                                         textOutput("coupon_openstaand_pct"),
+                                         subtitel = "Openstaand / Verzonden"))
+                    ))
+              )
       ),
       
       # MEMBERS
@@ -699,34 +616,81 @@ ui <- dashboardPage(
         
         h2("Nieuwsbrief Analytics"),
         
-        if (nrow(data$newsletter_campagnes) > 0) {
-          tagList(
-            fluidRow(
-              column(3, kpi_card("Gem. Open Rate", textOutput("nieuwsbrief_openrate"))),
-              column(3, kpi_card("Gem. CTR", textOutput("nieuwsbrief_ctr"))),
-              column(3, kpi_card("Totaal verzonden", textOutput("nieuwsbrief_verzonden"))),
-              column(3, kpi_card("Totaal clicks", textOutput("nieuwsbrief_clicks")))
-            ),
-            br(),
-            fluidRow(
-              box(width = 12, title = "Open Rate ontwikkeling",
-                  plotlyOutput("nieuwsbrief_trend_plot", height = "350px"))
-            ),
-            fluidRow(
-              box(width = 6, title = "Top campagnes", tableOutput("nieuwsbrief_top")),
-              box(width = 6, title = "Verbeterpunten", tableOutput("nieuwsbrief_bottom"))
-            ),
-            fluidRow(
-              box(width = 12, title = "Open Rate vs CTR",
-                  plotlyOutput("nieuwsbrief_bubble_plot", height = "450px"))
-            ),
-            fluidRow(
-              box(width = 12, title = "Campagne overzicht", tableOutput("nieuwsbrief_tabel"))
+        fluidRow(
+          column(
+            3,
+            kpi_card(
+              "Gem. Open Rate",
+              textOutput("nieuwsbrief_openrate")
+            )
+          ),
+          column(
+            3,
+            kpi_card(
+              "Gem. CTR",
+              textOutput("nieuwsbrief_ctr")
+            )
+          ),
+          column(
+            3,
+            kpi_card(
+              "Totaal verzonden",
+              textOutput("nieuwsbrief_verzonden")
+            )
+          ),
+          column(
+            3,
+            kpi_card(
+              "Totaal clicks",
+              textOutput("nieuwsbrief_clicks")
             )
           )
-        } else {
-          geen_data_melding("Geen nieuwsbrief-data beschikbaar.")
-        }
+        ),
+        
+        br(),
+        
+        fluidRow(
+          box(
+            width = 12,
+            title = "Open Rate ontwikkeling",
+            plotlyOutput("nieuwsbrief_trend_plot", height = "350px")
+          )
+        ),
+        
+        fluidRow(
+          
+          box(
+            width = 6,
+            title = "Top campagnes",
+            tableOutput("nieuwsbrief_top")
+          ),
+          
+          box(
+            width = 6,
+            title = "Verbeterpunten",
+            tableOutput("nieuwsbrief_bottom")
+          )
+          
+        ),
+        
+        fluidRow(
+          
+          box(
+            width = 12,
+            title = "Open Rate vs CTR",
+            plotlyOutput("nieuwsbrief_bubble_plot", height = "450px")
+          )
+          
+        ),
+        
+        fluidRow(
+          box(
+            width = 12,
+            title = "Campagne overzicht",
+            tableOutput("nieuwsbrief_tabel")
+          )
+        )
+        
       ),
       
       # SOCIAL MEDIA
@@ -764,29 +728,23 @@ ui <- dashboardPage(
               
               br(),
               h3("Post Performance"),
-              if (nrow(data$post_performance) > 0) {
-                tagList(
-                  fluidRow(
-                    column(12,
-                           selectInput("post_select", "Selecteer post",
-                                       choices = setNames(
-                                         seq_len(nrow(data$post_performance)),
-                                         paste0(data$post_performance$titel, " (",
-                                                format(as.Date(data$post_performance$datum), "%d-%m-%Y"), ")")
-                                       )))
-                  ),
-                  fluidRow(
-                    column(2, kpi_card("Views",    textOutput("post_views"))),
-                    column(2, kpi_card("Likes",    textOutput("post_likes"))),
-                    column(2, kpi_card("Comments", textOutput("post_comments"))),
-                    column(2, kpi_card("Shares",   textOutput("post_shares"))),
-                    column(2, kpi_card("Saves",    textOutput("post_saves"))),
-                    column(2, kpi_card("Engagement", textOutput("post_engagement")))
-                  )
-                )
-              } else {
-                geen_data_melding("Geen post-data beschikbaar.")
-              }
+              fluidRow(
+                column(12,
+                       selectInput("post_select", "Selecteer post",
+                                   choices = setNames(
+                                     seq_len(nrow(data$post_performance)),
+                                     paste0(data$post_performance$titel, " (",
+                                            format(as.Date(data$post_performance$datum), "%d-%m-%Y"), ")")
+                                   )))
+              ),
+              fluidRow(
+                column(2, kpi_card("Views",    textOutput("post_views"))),
+                column(2, kpi_card("Likes",    textOutput("post_likes"))),
+                column(2, kpi_card("Comments", textOutput("post_comments"))),
+                column(2, kpi_card("Shares",   textOutput("post_shares"))),
+                column(2, kpi_card("Saves",    textOutput("post_saves"))),
+                column(2, kpi_card("Engagement", textOutput("post_engagement")))
+              )
       ),
       
       # VERENIGINGEN
@@ -802,36 +760,96 @@ ui <- dashboardPage(
         
         h2("Website Analytics"),
         
-        if (WEBSITE_DATA_OK) {
-          tagList(
-            fluidRow(
-              column(3, kpi_card("Gebruikers", format_number(data$website_kpis$activeUsers))),
-              column(3, kpi_card("Sessies", format_number(data$website_kpis$sessions))),
-              column(3, kpi_card("Pageviews", format_number(data$website_kpis$screenPageViews))),
-              column(3, kpi_card("Engagement",
-                                 paste0(round(data$website_kpis$engagementRate * 100, 1), "%")))
-            ),
-            br(),
-            fluidRow(
-              box(width = 8, title = "Verkeer per dag",
-                  plotlyOutput("website_bezoekers_plot", height = "340px")),
-              box(width = 4, title = "Apparaten",
-                  plotlyOutput("website_devices_plot", height = "340px"))
-            ),
-            fluidRow(
-              box(width = 7, title = "Checkout funnel (laatste 30 dagen)",
-                  uiOutput("website_checkout_funnel")),
-              box(width = 5, title = "Top zoektermen (laatste 30 dagen)",
-                  plotlyOutput("website_search_plot", height = "500px"))
-            ),
-            fluidRow(
-              box(width = 6, title = "Top pagina's", tableOutput("website_paginas_tabel")),
-              box(width = 6, title = "Verkeersbronnen", tableOutput("website_bronnen_tabel"))
+        fluidRow(
+          column(
+            3,
+            kpi_card(
+              "Gebruikers",
+              format_number(data$website_kpis$activeUsers)
+            )
+          ),
+          column(
+            3,
+            kpi_card(
+              "Sessies",
+              format_number(data$website_kpis$sessions)
+            )
+          ),
+          column(
+            3,
+            kpi_card(
+              "Pageviews",
+              format_number(data$website_kpis$screenPageViews)
+            )
+          ),
+          column(
+            3,
+            kpi_card(
+              "Engagement",
+              paste0(
+                round(data$website_kpis$engagementRate * 100, 1),
+                "%"
+              )
             )
           )
-        } else {
-          geen_data_melding("Geen live Google Analytics-data beschikbaar. Controleer de GA-authenticatie (token-bestand).")
-        }
+        ),
+        
+        br(),
+        
+        fluidRow(
+          
+          box(
+            width = 8,
+            title = "Verkeer per dag",
+            plotlyOutput(
+              "website_bezoekers_plot",
+              height = "340px"
+            )
+          ),
+          
+          box(
+            width = 4,
+            title = "Apparaten",
+            plotlyOutput(
+              "website_devices_plot",
+              height = "340px"
+            )
+          )
+          
+        ),
+        
+        fluidRow(
+          
+          box(
+            width = 7,
+            title = "Checkout funnel (laatste 30 dagen)",
+            uiOutput("website_checkout_funnel")
+          ),
+          
+          box(
+            width = 5,
+            title = "Top zoektermen (laatste 30 dagen)",
+            plotlyOutput("website_search_plot", height = "500px")
+          )
+          
+        ),
+        
+        fluidRow(
+          
+          box(
+            width = 6,
+            title = "Top pagina's",
+            tableOutput("website_paginas_tabel")
+          ),
+          
+          box(
+            width = 6,
+            title = "Verkeersbronnen",
+            tableOutput("website_bronnen_tabel")
+          )
+          
+        )
+        
       ),
       
       # WEBSITE PILOT
@@ -841,40 +859,136 @@ ui <- dashboardPage(
         
         h2("Website Pilot Analyse"),
         
-        if (PILOT_DATA_OK) {
-          tagList(
-            fluidRow(
-              column(3, kpi_card("Add To Cart stijging", textOutput("pilot_add_to_cart"))),
-              column(3, kpi_card("Checkout stijging", textOutput("pilot_checkout"))),
-              column(3, kpi_card("Purchase stijging", textOutput("pilot_purchase"))),
-              column(3, kpi_card("Mobiele conversie", textOutput("pilot_mobile_conversion")))
-            ),
-            br(),
-            fluidRow(
-              column(3, kpi_card("Sessies na pilot", format_number(data$website_pilot_na$sessions))),
-              column(3, kpi_card("Gebruikers na pilot", format_number(data$website_pilot_na$activeUsers))),
-              column(3, kpi_card("Pageviews na pilot", format_number(data$website_pilot_na$screenPageViews))),
-              column(3, kpi_card("Engagement",
-                                 paste0(round(data$website_pilot_na$engagementRate * 100, 1), "%")))
-            ),
-            br(),
-            fluidRow(
-              box(width = 8, title = "Sessies voor vs na pilot",
-                  plotlyOutput("website_pilot_sessions_plot", height = "350px")),
-              box(width = 4, title = "Apparaten na pilot",
-                  plotlyOutput("website_pilot_devices_plot", height = "350px"))
-            ),
-            fluidRow(
-              box(width = 6, title = "Conversiefunnel vóór pilot", tableOutput("pilot_funnel_voor")),
-              box(width = 6, title = "Conversiefunnel na pilot", tableOutput("pilot_funnel_na"))
-            ),
-            fluidRow(
-              box(width = 12, title = "Resultaat pilot", htmlOutput("pilot_conclusie"))
+        fluidRow(
+          
+          column(
+            3,
+            kpi_card(
+              "Add To Cart stijging",
+              textOutput("pilot_add_to_cart")
+            )
+          ),
+          
+          column(
+            3,
+            kpi_card(
+              "Checkout stijging",
+              textOutput("pilot_checkout")
+            )
+          ),
+          
+          column(
+            3,
+            kpi_card(
+              "Purchase stijging",
+              textOutput("pilot_purchase")
+            )
+          ),
+          
+          column(
+            3,
+            kpi_card(
+              "Mobiele conversie",
+              textOutput("pilot_mobile_conversion")
             )
           )
-        } else {
-          geen_data_melding("Geen live Google Analytics-data beschikbaar voor de pilotanalyse. Controleer de GA-authenticatie (token-bestand).")
-        }
+          
+        ),
+        
+        br(),
+        
+        fluidRow(
+          
+          column(
+            3,
+            kpi_card(
+              "Sessies na pilot",
+              format_number(data$website_pilot_na$sessions)
+            )
+          ),
+          
+          column(
+            3,
+            kpi_card(
+              "Gebruikers na pilot",
+              format_number(data$website_pilot_na$activeUsers)
+            )
+          ),
+          
+          column(
+            3,
+            kpi_card(
+              "Pageviews na pilot",
+              format_number(data$website_pilot_na$screenPageViews)
+            )
+          ),
+          
+          column(
+            3,
+            kpi_card(
+              "Engagement",
+              paste0(
+                round(
+                  data$website_pilot_na$engagementRate * 100,
+                  1
+                ),
+                "%"
+              )
+            )
+          )
+          
+        ),
+        
+        br(),
+        
+        fluidRow(
+          
+          box(
+            width = 8,
+            title = "Sessies voor vs na pilot",
+            plotlyOutput(
+              "website_pilot_sessions_plot",
+              height = "350px"
+            )
+          ),
+          
+          box(
+            width = 4,
+            title = "Apparaten na pilot",
+            plotlyOutput(
+              "website_pilot_devices_plot",
+              height = "350px"
+            )
+          )
+          
+        ),
+        
+        fluidRow(
+          
+          box(
+            width = 6,
+            title = "Conversiefunnel vóór pilot",
+            tableOutput("pilot_funnel_voor")
+          ),
+          
+          box(
+            width = 6,
+            title = "Conversiefunnel na pilot",
+            tableOutput("pilot_funnel_na")
+          )
+          
+        ),
+        
+        fluidRow(
+          
+          box(
+            width = 12,
+            title = "Resultaat pilot",
+            htmlOutput("pilot_conclusie")
+          )
+          
+        )
+        
       ),
       
       # AFSPRAKEN
@@ -886,35 +1000,41 @@ ui <- dashboardPage(
         
         fluidRow(
           
-          column(3, kpi_card(
-            "Totaal afspraken",
-            format_number(data$afspraken_kpis_detail$totaal_afspraken),
-            subtitel = "totaal geboekt"
-          )),
+          column(
+            3,
+            kpi_card(
+              "Totaal afspraken",
+              format_number(data$afspraken_kpis_detail$totaal_afspraken),
+              subtitel = "totaal geboekt"
+            )
+          ),
           
-          column(3, kpi_card(
-            "Aantal diensten",
-            format_number(data$afspraken_kpis_detail$aantal_diensten),
-            subtitel = "unieke diensten"
-          )),
+          column(
+            3,
+            kpi_card(
+              "Aantal diensten",
+              format_number(data$afspraken_kpis_detail$aantal_diensten),
+              subtitel = "unieke diensten"
+            )
+          ),
           
-          column(3, kpi_card(
-            "Gem. afspraken per maand",
-            format_number(mean(data$afspraken_over_tijd$totaal, na.rm = TRUE)),
-            subtitel = "gemiddeld per maand"
-          )),
+          column(
+            3,
+            kpi_card(
+              "Gem. afspraken per maand",
+              format_number(mean(data$afspraken_over_tijd$totaal, na.rm = TRUE)),
+              subtitel = "gemiddeld per maand"
+            )
+          ),
           
-          column(3, {
-            if (nrow(data$afspraken_per_dienst) > 0) {
-              kpi_card(
-                "Top dienst",
-                data$afspraken_per_dienst$dienst[which.max(data$afspraken_per_dienst$totaal)],
-                subtitel = paste0(format_number(max(data$afspraken_per_dienst$totaal)), " afspraken")
-              )
-            } else {
-              kpi_card("Top dienst", "n.v.t.")
-            }
-          })
+          column(
+            3,
+            kpi_card(
+              "Top dienst",
+              data$afspraken_per_dienst$dienst[which.max(data$afspraken_per_dienst$totaal)],
+              subtitel = paste0(format_number(max(data$afspraken_per_dienst$totaal)), " afspraken")
+            )
+          )
           
         ),
         
@@ -922,16 +1042,28 @@ ui <- dashboardPage(
         
         fluidRow(
           
-          box(width = 8, title = "Afspraken door de tijd",
-              plotlyOutput("afspraken_tijd_plot", height = "350px")),
+          box(
+            width = 8,
+            title = "Afspraken door de tijd",
+            plotlyOutput("afspraken_tijd_plot", height = "350px")
+          ),
           
-          box(width = 4, title = "Top diensten",
-              plotlyOutput("afspraken_per_dienst_plot", height = "350px"))
+          box(
+            width = 4,
+            title = "Top diensten",
+            plotlyOutput("afspraken_per_dienst_plot", height = "350px")
+          )
           
         ),
         
         fluidRow(
-          box(width = 12, title = "Overzicht per dienst", tableOutput("afspraken_tabel"))
+          
+          box(
+            width = 12,
+            title = "Overzicht per dienst",
+            tableOutput("afspraken_tabel")
+          )
+          
         )
         
       ),
@@ -943,25 +1075,20 @@ ui <- dashboardPage(
                 column(4, kpi_card(
                   titel    = "Nieuwe members deze maand",
                   waarde   = format_number(tail(data$members_groei$nieuwe_members, 1)),
-                  subtitel = if (nrow(data$members_groei) > 0)
-                    format(as.Date(tail(data$members_groei$maand, 1)), "%B %Y") else ""
+                  subtitel = format(as.Date(tail(data$members_groei$maand, 1)), "%B %Y")
                 )),
                 column(4, kpi_card(
                   titel  = "Retentieratio",
-                  waarde = if (nrow(data$klantgedrag) > 0 && data$klantgedrag$unieke_klanten > 0)
-                    paste0(round(data$klantgedrag$terugkerende_klanten /
-                                   data$klantgedrag$unieke_klanten * 100, 1), "%")
-                  else "n.v.t.",
-                  subtitel = if (nrow(data$klantgedrag) > 0)
-                    paste0(data$klantgedrag$terugkerende_klanten,
-                           " van ", data$klantgedrag$unieke_klanten, " klanten keren terug")
-                  else ""
+                  waarde = paste0(round(
+                    data$klantgedrag$terugkerende_klanten /
+                      data$klantgedrag$unieke_klanten * 100, 1), "%"),
+                  subtitel = paste0(data$klantgedrag$terugkerende_klanten,
+                                    " van ", data$klantgedrag$unieke_klanten, " klanten keren terug")
                 )),
                 column(4, kpi_card(
                   titel    = "Afspraken deze maand",
                   waarde   = format_number(tail(data$afspraken_over_tijd$totaal, 1)),
-                  subtitel = if (nrow(data$afspraken_over_tijd) > 0)
-                    format(as.Date(tail(data$afspraken_over_tijd$maand, 1)), "%B %Y") else ""
+                  subtitel = format(as.Date(tail(data$afspraken_over_tijd$maand, 1)), "%B %Y")
                 ))
               ),
               br(),
@@ -971,7 +1098,7 @@ ui <- dashboardPage(
                 box(width = 6, title = "Retentie: klanttype",
                     plotlyOutput("retentie_plot", height = "340px")),
                 box(width = 6, title = "Afspraken over tijd",
-                    plotlyOutput("cohort_afspraken_plot", height = "340px"))
+                    plotlyOutput("cohort_afspraken_plot", height = "340px"))  # <-- hernoemd
               )
       )
       
@@ -987,12 +1114,10 @@ server <- function(input, output, session) {
   
   # HOME
   output$omzet_woonplaats <- renderPlotly({
-    if (nrow(data$woonplaats) == 0) return(plotly_empty())
     maak_bar_plot(data$woonplaats, "woonplaats", "omzet", "Omzet (\u20ac)")
   })
   
   output$omzet_per_maand <- renderPlotly({
-    if (nrow(data$omzet_per_maand) == 0) return(plotly_empty())
     plot_ly(
       data   = data$omzet_per_maand,
       x      = ~maand, y = ~omzet,
@@ -1009,7 +1134,6 @@ server <- function(input, output, session) {
   
   # MEMBERDEALS
   output$pricing_omzet <- renderPlotly({
-    if (nrow(data$pricing_performance) == 0) return(plotly_empty())
     maak_bar_plot(data$pricing_performance, "pricing_code", "omzet", "Omzet (\u20ac)")
   })
   
@@ -1017,7 +1141,6 @@ server <- function(input, output, session) {
   
   # MEMBERS
   output$members_aanmeldingen_plot <- renderPlotly({
-    if (nrow(data$members_groei) == 0) return(plotly_empty())
     
     plot_data <- data$members_groei |>
       arrange(maand) |>
@@ -1053,12 +1176,10 @@ server <- function(input, output, session) {
   })
   
   output$members_woonplaats <- renderPlotly({
-    if (nrow(data$woonplaats_members) == 0) return(plotly_empty())
     maak_bar_plot(data$woonplaats_members, "woonplaats", "omzet", "Omzet (\u20ac)")
   })
   
   output$members_actief_slapend_plot <- renderPlotly({
-    if (nrow(data$members_actief_slapend) == 0) return(plotly_empty())
     
     kleuren <- setNames(
       c(KLEUR_PRIMAIR, "#9ca3af"),
@@ -1088,7 +1209,6 @@ server <- function(input, output, session) {
   # NIEUWSBRIEVEN
   
   nieuwsbrief_data <- reactive({
-    if (nrow(data$newsletter_campagnes) == 0) return(data$newsletter_campagnes)
     
     data$newsletter_campagnes |>
       mutate(
@@ -1117,7 +1237,6 @@ server <- function(input, output, session) {
   })
   
   output$nieuwsbrief_trend_plot <- renderPlotly({
-    if (nrow(nieuwsbrief_data()) == 0) return(plotly_empty())
     
     plot_ly(
       data = nieuwsbrief_data(),
@@ -1152,7 +1271,6 @@ server <- function(input, output, session) {
   })
   
   output$nieuwsbrief_bubble_plot <- renderPlotly({
-    if (nrow(nieuwsbrief_data()) == 0) return(plotly_empty())
     
     plot_ly(
       data = nieuwsbrief_data(),
@@ -1183,7 +1301,6 @@ server <- function(input, output, session) {
   # AFSPRAKEN
   
   output$afspraken_per_dienst_plot <- renderPlotly({
-    if (nrow(data$afspraken_per_dienst) == 0) return(plotly_empty())
     
     top_diensten <- data$afspraken_per_dienst |> head(10)
     
@@ -1208,8 +1325,6 @@ server <- function(input, output, session) {
   
   output$afspraken_tabel <- renderTable({
     
-    if (nrow(data$afspraken_per_dienst) == 0) return(data.frame())
-    
     totaal_afspraken <- sum(data$afspraken_per_dienst$totaal)
     
     data$afspraken_per_dienst |>
@@ -1219,7 +1334,6 @@ server <- function(input, output, session) {
   })
   
   output$afspraken_tijd_plot <- renderPlotly({
-    if (nrow(data$afspraken_over_tijd) == 0) return(plotly_empty())
     plot_ly(
       data   = data$afspraken_over_tijd,
       x      = ~as.Date(maand), y = ~totaal,
@@ -1246,7 +1360,6 @@ server <- function(input, output, session) {
   output$coupon_openstaand <- renderText(format_number(sum(coupon_selected()$openstaand, na.rm = TRUE)))
   
   output$coupon_gebruik_plot <- renderPlotly({
-    if (nrow(coupon_selected()) == 0) return(plotly_empty())
     plot_ly(
       data   = coupon_selected(),
       x      = ~datum, y = ~ingeleverd,
@@ -1260,7 +1373,6 @@ server <- function(input, output, session) {
   })
   
   output$coupon_omzet_plot <- renderPlotly({
-    if (nrow(coupon_selected()) == 0) return(plotly_empty())
     plot_ly(
       data   = coupon_selected(),
       x      = ~datum, y = ~omzet,
@@ -1317,12 +1429,10 @@ server <- function(input, output, session) {
   
   # SOCIAL MEDIA
   output$social_platform_plot <- renderPlotly({
-    if (nrow(data$social_media_platform) == 0) return(plotly_empty())
     maak_bar_plot(data$social_media_platform, "platform", "views", "Views")
   })
   
   output$social_volgers_plot <- renderPlotly({
-    if (nrow(data$social_media_volgergroei) == 0) return(plotly_empty())
     kleuren <- c(KLEUR_PRIMAIR, KLEUR_SECUNDAIR, KLEUR_TERTIAIR, KLEUR_LICHT,
                  "#3a5e0d", "#b8d96e")
     maak_donut_plot(data$social_media_volgergroei, "platform",
@@ -1331,10 +1441,6 @@ server <- function(input, output, session) {
   
   # Volgers per platform als KPI: huidig totaal + groei t.o.v. 30 dagen terug
   output$social_volgers_kpis <- renderUI({
-    
-    if (nrow(data$social_media_volgers) == 0) {
-      return(geen_data_melding("Geen volgersdata beschikbaar."))
-    }
     
     df <- data$social_media_volgers |>
       mutate(datum = as.Date(datum))
@@ -1377,12 +1483,10 @@ server <- function(input, output, session) {
   
   # POST TYPE PERFORMANCE
   output$post_type_plot <- renderPlotly({
-    if (nrow(data$post_type_performance) == 0) return(plotly_empty())
     maak_bar_plot(data$post_type_performance, "post_type", "gemiddelde_views", "Gemiddelde views")
   })
   
   output$post_type_tabel <- renderTable({
-    if (nrow(data$post_type_performance) == 0) return(data.frame())
     data$post_type_performance |>
       rename(
         "Post type"          = post_type,
@@ -1415,7 +1519,6 @@ server <- function(input, output, session) {
   # WEBSITE
   
   output$website_search_plot <- renderPlotly({
-    if (nrow(data$website_search_terms) == 0) return(plotly_empty())
     
     zoekdata <- data$website_search_terms |>
       filter(
@@ -1444,7 +1547,6 @@ server <- function(input, output, session) {
   })
   
   output$website_bezoekers_plot <- renderPlotly({
-    if (nrow(data$website_dagelijks) == 0) return(plotly_empty())
     
     plot_data <- data$website_dagelijks |>
       mutate(date = as.Date(date)) |>
@@ -1484,7 +1586,6 @@ server <- function(input, output, session) {
   })
   
   output$website_devices_plot <- renderPlotly({
-    if (nrow(data$website_devices) == 0) return(plotly_empty())
     maak_donut_plot(
       data$website_devices,
       "deviceCategory",
@@ -1494,10 +1595,6 @@ server <- function(input, output, session) {
   })
   
   output$website_checkout_funnel <- renderUI({
-    
-    if (nrow(data$website_checkout_funnel) == 0) {
-      return(geen_data_melding("Geen funnel-data beschikbaar."))
-    }
     
     stappen <- data.frame(
       event = c("page_view", "view_item", "add_to_cart", "begin_checkout", "purchase"),
@@ -1511,7 +1608,6 @@ server <- function(input, output, session) {
     
     kleuren <- c("#8cbe26", "#7ab221", "#6ca61c", "#5b9218", "#4d7e12")
     max_count <- max(funnel_data$eventCount, na.rm = TRUE)
-    if (max_count == 0) max_count <- 1
     items <- list()
     
     for (i in seq_len(nrow(funnel_data))) {
@@ -1568,7 +1664,6 @@ server <- function(input, output, session) {
   
   # COHORTANALYSE
   output$members_groei_plot <- renderPlotly({
-    if (nrow(data$members_groei) == 0) return(plotly_empty())
     plot_ly(
       data   = data$members_groei,
       x      = ~as.Date(maand), y = ~nieuwe_members,
@@ -1595,7 +1690,6 @@ server <- function(input, output, session) {
   })
   
   output$retentie_plot <- renderPlotly({
-    if (nrow(data$klantgedrag) == 0) return(plotly_empty())
     retentie_df <- data.frame(
       klanttype = c("Eenmalig", "Terugkerend"),
       aantal    = c(data$klantgedrag$eenmalige_klanten,
@@ -1619,8 +1713,8 @@ server <- function(input, output, session) {
       layout(bargap = 0.5)
   })
   
+  # Hernoemd van afspraken_tijd_plot naar cohort_afspraken_plot
   output$cohort_afspraken_plot <- renderPlotly({
-    if (nrow(data$afspraken_over_tijd) == 0) return(plotly_empty())
     plot_ly(
       data   = data$afspraken_over_tijd,
       x      = ~as.Date(maand), y = ~totaal,
@@ -1635,126 +1729,269 @@ server <- function(input, output, session) {
       basis_layout(y_titel = "Aantal afspraken")
   })
   
-  # WEBSITE PILOT (alleen relevant als PILOT_DATA_OK TRUE is, de UI toont anders al een melding)
+  # WEBSITE PILOT
   
   pilot_percentage <- function(voor, na){
+    
     if(length(voor) == 0 || length(na) == 0) return("0%")
+    
     pct <- round(((na - voor) / voor) * 100, 1)
-    paste0(ifelse(pct > 0, "+", ""), pct, "%")
+    
+    paste0(
+      ifelse(pct > 0, "+", ""),
+      pct,
+      "%"
+    )
+    
   }
   
   output$website_pilot_sessions_plot <- renderPlotly({
+    
     voor <- data$website_pilot_dagelijks_voor
     na <- data$website_pilot_dagelijks_na
-    if (nrow(voor) == 0 && nrow(na) == 0) return(plotly_empty())
     
     plot_ly() |>
+      
       add_trace(
-        data = voor, x = ~date, y = ~sessions,
-        type = "scatter", mode = "lines", name = "Voor pilot",
+        data = voor,
+        x = ~date,
+        y = ~sessions,
+        type = "scatter",
+        mode = "lines",
+        name = "Voor pilot",
         line = list(color = "#9ca3af", width = 3)
       ) |>
+      
       add_trace(
-        data = na, x = ~date, y = ~sessions,
-        type = "scatter", mode = "lines", name = "Na pilot",
+        data = na,
+        x = ~date,
+        y = ~sessions,
+        type = "scatter",
+        mode = "lines",
+        name = "Na pilot",
         line = list(color = KLEUR_PRIMAIR, width = 3)
       ) |>
-      basis_layout(y_titel = "Sessies", legenda = TRUE)
+      
+      basis_layout(
+        y_titel = "Sessies",
+        legenda = TRUE
+      )
+    
   })
   
   output$pilot_mobile_conversion <- renderText({
-    voor <- data$website_pilot_devices_voor |> filter(deviceCategory == "mobile") |> pull(sessions)
-    na <- data$website_pilot_devices_na |> filter(deviceCategory == "mobile") |> pull(sessions)
-    pilot_percentage(sum(voor), sum(na))
+    
+    voor <- data$website_pilot_devices_voor |>
+      filter(deviceCategory == "mobile") |>
+      pull(sessions)
+    
+    na <- data$website_pilot_devices_na |>
+      filter(deviceCategory == "mobile") |>
+      pull(sessions)
+    
+    pilot_percentage(
+      sum(voor),
+      sum(na)
+    )
+    
   })
   
   output$website_pilot_devices_plot <- renderPlotly({
-    if (nrow(data$website_pilot_devices_na) == 0) return(plotly_empty())
+    
     maak_donut_plot(
-      data$website_pilot_devices_na, "deviceCategory", "sessions",
-      c(KLEUR_PRIMAIR, KLEUR_TERTIAIR, KLEUR_LICHT)
+      data$website_pilot_devices_na,
+      "deviceCategory",
+      "sessions",
+      c(
+        KLEUR_PRIMAIR,
+        KLEUR_TERTIAIR,
+        KLEUR_LICHT
+      )
     )
+    
   })
   
   output$pilot_funnel_voor <- renderTable({
-    data$website_pilot_funnel_voor |> arrange(desc(eventCount))
+    
+    data$website_pilot_funnel_voor |>
+      arrange(desc(eventCount))
+    
   })
   
   output$pilot_funnel_na <- renderTable({
-    data$website_pilot_funnel_na |> arrange(desc(eventCount))
+    
+    data$website_pilot_funnel_na |>
+      arrange(desc(eventCount))
+    
   })
   
   output$pilot_add_to_cart <- renderText({
-    voor <- data$website_pilot_funnel_voor |> filter(eventName == "add_to_cart") |> pull(eventCount)
-    na <- data$website_pilot_funnel_na |> filter(eventName == "add_to_cart") |> pull(eventCount)
+    
+    voor <- data$website_pilot_funnel_voor |>
+      filter(eventName == "add_to_cart") |>
+      pull(eventCount)
+    
+    na <- data$website_pilot_funnel_na |>
+      filter(eventName == "add_to_cart") |>
+      pull(eventCount)
+    
     pilot_percentage(voor, na)
+    
   })
-  
   output$pilot_purchase <- renderText({
-    voor <- data$website_pilot_funnel_voor |> filter(eventName == "purchase") |> pull(eventCount)
-    na <- data$website_pilot_funnel_na |> filter(eventName == "purchase") |> pull(eventCount)
+    
+    voor <- data$website_pilot_funnel_voor |>
+      filter(eventName == "purchase") |>
+      pull(eventCount)
+    
+    na <- data$website_pilot_funnel_na |>
+      filter(eventName == "purchase") |>
+      pull(eventCount)
+    
     pilot_percentage(voor, na)
+    
   })
   
   output$pilot_checkout <- renderText({
-    voor <- data$website_pilot_funnel_voor |> filter(eventName == "begin_checkout") |> pull(eventCount)
-    na <- data$website_pilot_funnel_na |> filter(eventName == "begin_checkout") |> pull(eventCount)
+    
+    voor <- data$website_pilot_funnel_voor |>
+      filter(eventName == "begin_checkout") |>
+      pull(eventCount)
+    
+    na <- data$website_pilot_funnel_na |>
+      filter(eventName == "begin_checkout") |>
+      pull(eventCount)
+    
     pilot_percentage(voor, na)
+    
   })
-  
   output$pilot_conclusie <- renderUI({
     
     get_event_count <- function(df, event) {
-      waarde <- df |> filter(eventName == event) |> pull(eventCount)
+      
+      waarde <- df |>
+        filter(eventName == event) |>
+        pull(eventCount)
+      
       if(length(waarde) == 0) return(0)
+      
       waarde
+      
     }
     
-    addcart_voor <- get_event_count(data$website_pilot_funnel_voor, "add_to_cart")
-    addcart_na <- get_event_count(data$website_pilot_funnel_na, "add_to_cart")
-    checkout_voor <- get_event_count(data$website_pilot_funnel_voor, "begin_checkout")
-    checkout_na <- get_event_count(data$website_pilot_funnel_na, "begin_checkout")
-    purchase_voor <- get_event_count(data$website_pilot_funnel_voor, "purchase")
-    purchase_na <- get_event_count(data$website_pilot_funnel_na, "purchase")
+    addcart_voor <- get_event_count(
+      data$website_pilot_funnel_voor,
+      "add_to_cart"
+    )
     
-    addcart_pct <- round(((addcart_na - addcart_voor) / max(addcart_voor, 1)) * 100, 1)
-    checkout_pct <- round(((checkout_na - checkout_voor) / max(checkout_voor, 1)) * 100, 1)
-    purchase_pct <- round(((purchase_na - purchase_voor) / max(purchase_voor, 1)) * 100, 1)
+    addcart_na <- get_event_count(
+      data$website_pilot_funnel_na,
+      "add_to_cart"
+    )
     
-    mobile_voor <- data$website_pilot_devices_voor |> filter(deviceCategory == "mobile") |> pull(sessions)
-    mobile_na <- data$website_pilot_devices_na |> filter(deviceCategory == "mobile") |> pull(sessions)
+    checkout_voor <- get_event_count(
+      data$website_pilot_funnel_voor,
+      "begin_checkout"
+    )
+    
+    checkout_na <- get_event_count(
+      data$website_pilot_funnel_na,
+      "begin_checkout"
+    )
+    
+    purchase_voor <- get_event_count(
+      data$website_pilot_funnel_voor,
+      "purchase"
+    )
+    
+    purchase_na <- get_event_count(
+      data$website_pilot_funnel_na,
+      "purchase"
+    )
+    
+    addcart_pct <- round(
+      ((addcart_na - addcart_voor) /
+         max(addcart_voor, 1)) * 100,
+      1
+    )
+    
+    checkout_pct <- round(
+      ((checkout_na - checkout_voor) /
+         max(checkout_voor, 1)) * 100,
+      1
+    )
+    
+    purchase_pct <- round(
+      ((purchase_na - purchase_voor) /
+         max(purchase_voor, 1)) * 100,
+      1
+    )
+    
+    mobile_voor <- data$website_pilot_devices_voor |>
+      filter(deviceCategory == "mobile") |>
+      pull(sessions)
+    
+    mobile_na <- data$website_pilot_devices_na |>
+      filter(deviceCategory == "mobile") |>
+      pull(sessions)
+    
     if(length(mobile_voor) == 0) mobile_voor <- 0
     if(length(mobile_na) == 0) mobile_na <- 0
-    mobile_pct <- round(((mobile_na - mobile_voor) / max(mobile_voor, 1)) * 100, 1)
+    
+    mobile_pct <- round(
+      ((mobile_na - mobile_voor) /
+         max(mobile_voor, 1)) * 100,
+      1
+    )
     
     HTML(
       paste0(
         "<div style='padding:10px;'>",
+        
         "<h3>Resultaat Website Pilot</h3>",
+        
         "<table style='width:100%;font-size:16px;'>",
+        
         "<tr><td><b>Add To Cart</b></td><td>",
-        ifelse(addcart_pct >= 0, paste0("+", addcart_pct, "%"), paste0(addcart_pct, "%")),
+        ifelse(addcart_pct >= 0,
+               paste0("+", addcart_pct, "%"),
+               paste0(addcart_pct, "%")),
         "</td></tr>",
+        
         "<tr><td><b>Checkout Starts</b></td><td>",
-        ifelse(checkout_pct >= 0, paste0("+", checkout_pct, "%"), paste0(checkout_pct, "%")),
+        ifelse(checkout_pct >= 0,
+               paste0("+", checkout_pct, "%"),
+               paste0(checkout_pct, "%")),
         "</td></tr>",
+        
         "<tr><td><b>Purchases</b></td><td>",
-        ifelse(purchase_pct >= 0, paste0("+", purchase_pct, "%"), paste0(purchase_pct, "%")),
+        ifelse(purchase_pct >= 0,
+               paste0("+", purchase_pct, "%"),
+               paste0(purchase_pct, "%")),
         "</td></tr>",
+        
         "<tr><td><b>Mobiele sessies</b></td><td>",
-        ifelse(mobile_pct >= 0, paste0("+", mobile_pct, "%"), paste0(mobile_pct, "%")),
+        ifelse(mobile_pct >= 0,
+               paste0("+", mobile_pct, "%"),
+               paste0(mobile_pct, "%")),
         "</td></tr>",
+        
         "</table>",
+        
         "<br>",
+        
         "<p><b>Doorgevoerde wijzigingen:</b></p>",
+        
         "<ul>",
         "<li>Sticky Add To Cart button mobiel</li>",
         "<li>Verkorte checkout teksten</li>",
         "<li>Verkort aanmeldformulier</li>",
         "</ul>",
+        
         "</div>"
       )
     )
+    
   })
   
 }
