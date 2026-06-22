@@ -16,16 +16,24 @@ KLEUR_SECUNDAIR <- "#6ca61c"
 KLEUR_TERTIAIR  <- "#4d7e12"
 KLEUR_LICHT     <- "#c5e07a"
 
-# Pad robuust maken: werkt zowel lokaal als in de Docker-container,
-# onafhankelijk van de working directory waarin het proces start.
-DB_PAD <- file.path(dirname(normalizePath(sys.frame(1)$ofile %||% "app.R",
-                                          mustWork = FALSE)), "bedrijf.duckdb")
-if (!file.exists(DB_PAD)) {
-  # Fallback: gewoon relatief pad t.o.v. de huidige working directory
-  DB_PAD <- "bedrijf.duckdb"
-}
-
 `%||%` <- function(a, b) if (is.null(a)) b else a
+
+# Pad naar de database. shiny::runApp('/srv/shiny-server') zet de working
+# directory automatisch naar de app-map, dus een relatief pad is hier
+# voldoende en het meest robuust (geen afhankelijkheid van sys.frame()-
+# trucs die breken zodra het script niet via source() gestart wordt).
+DB_PAD <- "bedrijf.duckdb"
+if (!file.exists(DB_PAD)) {
+  # Fallback voor het geval de working directory toch anders is:
+  # zoek het bestand relatief t.o.v. de locatie van dit script.
+  mogelijke_pad <- tryCatch(
+    file.path(dirname(normalizePath(sys.frame(1)$ofile, mustWork = FALSE)), "bedrijf.duckdb"),
+    error = function(e) NA
+  )
+  if (!is.na(mogelijke_pad) && file.exists(mogelijke_pad)) {
+    DB_PAD <- mogelijke_pad
+  }
+}
 
 # --------------------------------------------------
 # GOOGLE ANALYTICS AUTHENTICATIE (OAUTH-TOKEN, GEEN SERVICE ACCOUNT)
@@ -82,6 +90,16 @@ if (nzchar(ga_token_base64)) {
 
 con <- dbConnect(duckdb::duckdb(), DB_PAD)
 onStop(function() dbDisconnect(con, shutdown = TRUE))
+
+# Expliciet de icu-extensie laden (nodig voor sommige datum/locale-functies
+# in de mart-views). Wordt al tijdens de Docker build geïnstalleerd onder
+# dezelfde HOME als waarmee de app draait, zodat dit hier alleen het laden
+# is, zonder netwerktoegang nodig te hebben.
+tryCatch({
+  dbExecute(con, "LOAD icu")
+}, error = function(e) {
+  message("Waarschuwing: kon DuckDB-extensie 'icu' niet laden: ", conditionMessage(e))
+})
 
 # --------------------------------------------------
 # HELPER: OPMAAK
