@@ -9,17 +9,32 @@ SELECT
     COUNT(*) AS aantal_gebruikt,
 
     ROUND(
-        SUM(COALESCE(omzet, 0)),
+        SUM(
+            COALESCE(
+                CAST(REPLACE(omzet, ',', '.') AS DOUBLE),
+                0
+            )
+        ),
         2
     ) AS omzet,
 
     ROUND(
-        SUM(COALESCE(discount, 0)),
+        SUM(
+            COALESCE(
+                CAST(REPLACE(discount, ',', '.') AS DOUBLE),
+                0
+            )
+        ),
         2
     ) AS discount,
 
     ROUND(
-        SUM(COALESCE(omzet, 0))
+        SUM(
+            COALESCE(
+                CAST(REPLACE(omzet, ',', '.') AS DOUBLE),
+                0
+            )
+        )
         /
         NULLIF(COUNT(*), 0),
         2
