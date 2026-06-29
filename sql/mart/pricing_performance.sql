@@ -1,41 +1,22 @@
 CREATE OR REPLACE VIEW mart.pricing_performance AS
 
 SELECT
-
     pricing_code,
-
     categorie,
-
     COUNT(*) AS aantal_gebruikt,
 
     ROUND(
-        SUM(
-            COALESCE(
-                CAST(REPLACE(omzet, ',', '.') AS DOUBLE),
-                0
-            )
-        ),
+        SUM(omzet),
         2
     ) AS omzet,
 
     ROUND(
-        SUM(
-            COALESCE(
-                CAST(REPLACE(discount, ',', '.') AS DOUBLE),
-                0
-            )
-        ),
+        ABS(SUM(discount)),
         2
     ) AS discount,
 
     ROUND(
-        SUM(
-            COALESCE(
-                CAST(REPLACE(omzet, ',', '.') AS DOUBLE),
-                0
-            )
-        )
-        /
+        SUM(omzet) /
         NULLIF(COUNT(*), 0),
         2
     ) AS omzet_per_gebruik
