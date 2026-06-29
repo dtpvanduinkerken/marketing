@@ -384,7 +384,7 @@ load_data <- function() {
                                    "SELECT woonplaats, klanten, omzet, omzet_per_klant
      FROM mart.omzet_per_woonplaats ORDER BY omzet DESC LIMIT 10")
   newsletter_campagnes <- dbGetQuery(con,
-                                     "SELECT * FROM raw.newsletters ORDER BY datum DESC")
+                                     "SELECT * FROM staging.newsletters ORDER BY datum DESC")
   afspraken_per_dienst <- dbGetQuery(con,
                                      "SELECT dienst, COUNT(*) AS totaal FROM raw.afspraken
      GROUP BY dienst ORDER BY totaal DESC")
