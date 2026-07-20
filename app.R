@@ -434,44 +434,6 @@ FROM raw.afspraken
     FROM raw.members
     GROUP BY status
   ")
-
-  # MT-samenvatting: steeds de laatste 7 beschikbare dagen vergelijken met
-  # de 7 dagen daarvoor. Dit blijft ook bruikbaar als een bron niet vandaag
-  # is ververst.
-  mt_omzet_7d <- dbGetQuery(con, "
-    WITH grens AS (SELECT MAX(datum) AS laatste_datum FROM raw.personal_pricing)
-    SELECT
-      grens.laatste_datum,
-      COALESCE(SUM(CASE WHEN datum > grens.laatste_datum - INTERVAL 7 DAY
-                        THEN omzet ELSE 0 END), 0) AS afgelopen_7d,
-      COALESCE(SUM(CASE WHEN datum > grens.laatste_datum - INTERVAL 14 DAY
-                         AND datum <= grens.laatste_datum - INTERVAL 7 DAY
-                        THEN omzet ELSE 0 END), 0) AS vorige_7d
-    FROM raw.personal_pricing, grens
-    GROUP BY grens.laatste_datum
-  ")
-
-  mt_afspraken_7d <- dbGetQuery(con, "
-    WITH grens AS (SELECT MAX(datum) AS laatste_datum FROM raw.afspraken)
-    SELECT
-      grens.laatste_datum,
-      COUNT(CASE WHEN datum > grens.laatste_datum - INTERVAL 7 DAY THEN 1 END) AS afgelopen_7d,
-      COUNT(CASE WHEN datum > grens.laatste_datum - INTERVAL 14 DAY
-                  AND datum <= grens.laatste_datum - INTERVAL 7 DAY THEN 1 END) AS vorige_7d
-    FROM raw.afspraken, grens
-    GROUP BY grens.laatste_datum
-  ")
-
-  mt_members_7d <- dbGetQuery(con, "
-    WITH grens AS (SELECT MAX(aanmelddatum) AS laatste_datum FROM raw.members)
-    SELECT
-      grens.laatste_datum,
-      COUNT(CASE WHEN aanmelddatum > grens.laatste_datum - INTERVAL 7 DAY THEN 1 END) AS afgelopen_7d,
-      COUNT(CASE WHEN aanmelddatum > grens.laatste_datum - INTERVAL 14 DAY
-                  AND aanmelddatum <= grens.laatste_datum - INTERVAL 7 DAY THEN 1 END) AS vorige_7d
-    FROM raw.members, grens
-    GROUP BY grens.laatste_datum
-  ")
   
   # --------------------------------------------------
   # GOOGLE ANALYTICS DATA (met veilige fallback)
@@ -549,10 +511,7 @@ FROM raw.afspraken
     website_search_terms = website_search_terms,
     afspraken_kpis_detail = afspraken_kpis_detail,
     members_nieuw_7d = members_nieuw_7d,
-    members_actief_slapend = members_actief_slapend,
-    mt_omzet_7d = mt_omzet_7d,
-    mt_afspraken_7d = mt_afspraken_7d,
-    mt_members_7d = mt_members_7d
+    members_actief_slapend = members_actief_slapend
   )
 }
 
@@ -629,9 +588,6 @@ ui <- dashboardPage(
       
       # HOME
       tabItem(tabName = "home",
-              h2("MT-overzicht"),
-              uiOutput("mt_samenvatting"),
-              br(),
               fluidRow(
                 column(3, kpi_card("Totale omzet",
                                    format_euro(data$pricing$totale_omzet),
@@ -959,144 +915,6 @@ ui <- dashboardPage(
 server <- function(input, output, session) {
   
   # HOME
-  output$mt_samenvatting <- renderUI({
-    trend_info <- function(huidig, vorig) {
-      huidig <- ifelse(length(huidig) == 0 || is.na(huidig), 0, as.numeric(huidig))
-      vorig <- ifelse(length(vorig) == 0 || is.na(vorig), 0, as.numeric(vorig))
-      pct <- if (vorig == 0) {
-        if (huidig > 0) 100 else 0
-      } else {
-        round((huidig - vorig) / vorig * 100, 1)
-      }
-      list(
-        huidig = huidig,
-        pct = pct,
-        label = paste0(ifelse(pct > 0, "+", ""), format(pct, decimal.mark = ","), "%"),
-        kleur = if (pct >= 0) "#3d5c0f" else "#9f2d20",
-        achtergrond = if (pct >= 0) "#eaf5d8" else "#fdecea",
-        icoon = if (pct >= 0) "arrow-trend-up" else "arrow-trend-down"
-      )
-    }
-
-    omzet <- trend_info(data$mt_omzet_7d$afgelopen_7d, data$mt_omzet_7d$vorige_7d)
-    afspraken <- trend_info(data$mt_afspraken_7d$afgelopen_7d, data$mt_afspraken_7d$vorige_7d)
-    members <- trend_info(data$mt_members_7d$afgelopen_7d, data$mt_members_7d$vorige_7d)
-
-    website_df <- data$website_dagelijks |>
-      mutate(date = as.Date(date)) |>
-      filter(!is.na(date)) |>
-      arrange(date)
-    if (nrow(website_df) > 0) {
-      website_eind <- max(website_df$date)
-      website_huidig <- sum(website_df$sessions[website_df$date > website_eind - 7], na.rm = TRUE)
-      website_vorig <- sum(website_df$sessions[
-        website_df$date > website_eind - 14 & website_df$date <= website_eind - 7
-      ], na.rm = TRUE)
-    } else {
-      website_eind <- as.Date(NA)
-      website_huidig <- 0
-      website_vorig <- 0
-    }
-    website <- trend_info(website_huidig, website_vorig)
-
-    metrics <- list(
-      list(naam = "Omzet", waarde = format_euro(omzet$huidig), trend = omzet),
-      list(naam = "Afspraken", waarde = format_number(afspraken$huidig), trend = afspraken),
-      list(naam = "Nieuwe members", waarde = format_number(members$huidig), trend = members),
-      list(naam = "Websitebezoeken", waarde = format_number(website$huidig), trend = website)
-    )
-
-    metric_blokken <- lapply(metrics, function(metric) {
-      div(
-        style = "flex:1;min-width:180px;padding:18px 20px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;",
-        div(style = "font-size:13px;color:#6b7280;font-weight:600;", metric$naam),
-        div(style = "font-size:27px;color:#1f2937;font-weight:700;margin:5px 0;", metric$waarde),
-        span(
-          style = paste0("display:inline-block;padding:4px 8px;border-radius:20px;font-size:12px;font-weight:700;color:",
-                         metric$trend$kleur, ";background:", metric$trend$achtergrond, ";"),
-          icon(metric$trend$icoon), " ", metric$trend$label, " t.o.v. vorige 7 dagen"
-        )
-      )
-    })
-
-    signalen <- list(
-      list(naam = "omzet", pct = omzet$pct,
-           daling = "Omzet daalt: controleer welke deals, kanalen of locaties achterblijven en wijs een eigenaar toe.",
-           stijging = "Omzet groeit: bepaal welke deals of locaties dit veroorzaken en schaal de succesvolle aanpak op."),
-      list(naam = "afspraken", pct = afspraken$pct,
-           daling = "Afspraken lopen terug: controleer beschikbaarheid, boekingsuitval en de zichtbaarheid van de afspraakknop.",
-           stijging = "Afspraken groeien: bewaak capaciteit en voorkom dat wachttijden of bezetting een knelpunt worden."),
-      list(naam = "nieuwe members", pct = members$pct,
-           daling = "Nieuwe memberaanmeldingen dalen: verscherp de acquisitiecampagne en controleer de aanmeldfunnel.",
-           stijging = "Membergroei versnelt: volg activatie en eerste aankoop, zodat nieuwe members ook waarde gaan leveren."),
-      list(naam = "websitebezoeken", pct = website$pct,
-           daling = "Websiteverkeer daalt: analyseer verkeersbronnen en campagnes en herstel het kanaal met de grootste terugval.",
-           stijging = "Websiteverkeer stijgt: controleer of de extra bezoeken ook doorstromen naar winkelwagen, checkout en aankoop.")
-    )
-    signalen <- signalen[order(vapply(signalen, function(x) x$pct, numeric(1)))]
-    actiepunten <- lapply(head(signalen, 3), function(signaal) {
-      urgent <- signaal$pct <= -10
-      tekst <- if (signaal$pct < 0) signaal$daling else signaal$stijging
-      li(
-        style = "margin-bottom:10px;line-height:1.45;",
-        span(
-          style = paste0("font-size:11px;font-weight:700;padding:3px 7px;border-radius:10px;margin-right:7px;color:",
-                         if (urgent) "#9f2d20;background:#fdecea;" else "#3d5c0f;background:#eaf5d8;"),
-          if (urgent) "PRIORITEIT" else "AANDACHT"
-        ),
-        tekst
-      )
-    })
-
-    negatieve_signalen <- sum(vapply(signalen, function(x) x$pct < 0, logical(1)))
-    hoofdboodschap <- if (negatieve_signalen >= 3) {
-      "Meerdere kernindicatoren staan onder druk. Focus deze week op herstel en wijs per actiepunt een eigenaar aan."
-    } else if (negatieve_signalen >= 1) {
-      "Het totaalbeeld is gemengd. Pak de dalende indicatoren gericht aan en borg wat aantoonbaar groeit."
-    } else {
-      "De kernindicatoren ontwikkelen zich positief. Richt de aandacht op vasthouden, opschalen en conversie naar resultaat."
-    }
-
-    brondata <- c(as.character(data$mt_omzet_7d$laatste_datum),
-                  as.character(data$mt_afspraken_7d$laatste_datum),
-                  as.character(data$mt_members_7d$laatste_datum),
-                  as.character(website_eind))
-    geldige_data <- as.Date(brondata[!is.na(brondata) & brondata != "NA"])
-    periode_label <- if (length(geldige_data) > 0) {
-      paste0("Meest recente meting: ", format(max(geldige_data), "%d-%m-%Y"),
-             " · per bron gemeten op de laatst beschikbare datum")
-    } else {
-      "Geen actuele brondata beschikbaar"
-    }
-
-    div(
-      style = "background:#f8fafc;border:1px solid #e5e7eb;border-radius:16px;padding:22px;margin-bottom:8px;",
-      div(
-        style = "display:flex;justify-content:space-between;gap:15px;align-items:flex-start;flex-wrap:wrap;margin-bottom:18px;",
-        div(
-          h3(style = "margin:0 0 5px 0;color:#1f2937;", "Managementsamenvatting — laatste 7 dagen"),
-          div(style = "color:#6b7280;font-size:13px;", periode_label)
-        ),
-        span(style = "background:#1f2937;color:#fff;border-radius:20px;padding:7px 12px;font-size:12px;font-weight:700;",
-             "VERGELIJKING MET VOORGAANDE 7 DAGEN")
-      ),
-      div(style = "display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;", do.call(tagList, metric_blokken)),
-      div(
-        style = "display:flex;gap:18px;flex-wrap:wrap;",
-        div(
-          style = "flex:1;min-width:280px;background:#fff;border-left:5px solid #8cbe26;border-radius:10px;padding:17px 19px;",
-          div(style = "font-size:12px;color:#6b7280;font-weight:700;margin-bottom:7px;", "WAT HET MT MOET WETEN"),
-          div(style = "font-size:16px;line-height:1.5;color:#1f2937;font-weight:600;", hoofdboodschap)
-        ),
-        div(
-          style = "flex:1.4;min-width:360px;background:#fff;border-radius:10px;padding:17px 19px;",
-          div(style = "font-size:12px;color:#6b7280;font-weight:700;margin-bottom:10px;", "AANBEVOLEN ACTIES"),
-          tags$ol(style = "padding-left:20px;margin:0;color:#374151;", do.call(tagList, actiepunten))
-        )
-      )
-    )
-  })
-
   output$omzet_woonplaats <- renderPlotly({
     maak_bar_plot(data$woonplaats, "woonplaats", "omzet", "Omzet (\u20ac)")
   })
