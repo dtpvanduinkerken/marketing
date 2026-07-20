@@ -117,7 +117,7 @@ if (nzchar(ga_service_account_pad)) {
 } else {
   ga4_fout_melding <- "Geen service-account JSON gevonden op de server (Secret File of GA_AUTH_JSON_PATH)."
   message("Geen service-account JSON gevonden. ",
-          "Website/Website Pilot tabs draaien zonder live GA-data.")
+          "Website-tab draait zonder live GA-data.")
 }
 
 # --------------------------------------------------
@@ -486,76 +486,6 @@ FROM raw.afspraken
     leeg_website_funnel
   }
   
-  # WEBSITE PILOT - VOOR
-  website_pilot_voor <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-04-28", "2025-05-27"),
-    metrics = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
-  )) %||% leeg_website_kpis
-  
-  website_pilot_funnel_voor_raw <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-04-28", "2025-05-27"),
-    dimensions = "eventName",
-    metrics = c("eventCount")
-  ))
-  website_pilot_funnel_voor <- if (!is.null(website_pilot_funnel_voor_raw)) {
-    website_pilot_funnel_voor_raw |>
-      filter(eventName %in% c("page_view", "view_item", "add_to_cart",
-                              "begin_checkout", "purchase"))
-  } else {
-    leeg_website_funnel
-  }
-  
-  website_pilot_devices_voor <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-04-28", "2025-05-27"),
-    dimensions = "deviceCategory",
-    metrics = c("sessions")
-  )) %||% data.frame(deviceCategory = c("desktop", "mobile", "tablet"), sessions = c(0, 0, 0))
-  
-  website_pilot_dagelijks_voor <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-04-28", "2025-05-27"),
-    dimensions = "date",
-    metrics = c("sessions")
-  )) %||% data.frame(date = as.character(Sys.Date()), sessions = 0)
-  
-  # WEBSITE PILOT - NA
-  website_pilot_na <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-05-28", "2025-06-28"),
-    metrics = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
-  )) %||% leeg_website_kpis
-  
-  website_pilot_funnel_na_raw <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-05-28", "2025-06-28"),
-    dimensions = "eventName",
-    metrics = c("eventCount")
-  ))
-  website_pilot_funnel_na <- if (!is.null(website_pilot_funnel_na_raw)) {
-    website_pilot_funnel_na_raw |>
-      filter(eventName %in% c("page_view", "view_item", "add_to_cart",
-                              "begin_checkout", "purchase"))
-  } else {
-    leeg_website_funnel
-  }
-  
-  website_pilot_devices_na <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-05-28", "2025-06-28"),
-    dimensions = "deviceCategory",
-    metrics = c("sessions")
-  )) %||% data.frame(deviceCategory = c("desktop", "mobile", "tablet"), sessions = c(0, 0, 0))
-  
-  website_pilot_dagelijks_na <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("2025-05-28", "2025-06-28"),
-    dimensions = "date",
-    metrics = c("sessions")
-  )) %||% data.frame(date = as.character(Sys.Date()), sessions = 0)
-  
   list(
     pricing = pricing, klanten = klanten, marketing = marketing,
     afspraken = afspraken, woonplaats = woonplaats,
@@ -581,15 +511,7 @@ FROM raw.afspraken
     website_search_terms = website_search_terms,
     afspraken_kpis_detail = afspraken_kpis_detail,
     members_nieuw_7d = members_nieuw_7d,
-    members_actief_slapend = members_actief_slapend,
-    website_pilot_voor = website_pilot_voor,
-    website_pilot_na = website_pilot_na,
-    website_pilot_funnel_voor = website_pilot_funnel_voor,
-    website_pilot_funnel_na = website_pilot_funnel_na,
-    website_pilot_devices_voor = website_pilot_devices_voor,
-    website_pilot_devices_na = website_pilot_devices_na,
-    website_pilot_dagelijks_voor = website_pilot_dagelijks_voor,
-    website_pilot_dagelijks_na = website_pilot_dagelijks_na
+    members_actief_slapend = members_actief_slapend
   )
 }
 
@@ -651,7 +573,6 @@ ui <- dashboardPage(
       menuItem("Social Media",  tabName = "social_media",  icon = icon("hashtag")),
       menuItem("Verenigingen",  tabName = "verenigingen",  icon = icon("people-group")),
       menuItem("Website",       tabName = "website",       icon = icon("globe")),
-      menuItem("Website Pilot", tabName = "website_pilot", icon = icon("flask")),
       menuItem("Afspraken",     tabName = "afspraken",     icon = icon("calendar")),
       menuItem("Cohortanalyse", tabName = "cohortanalyse", icon = icon("chart-line"))
     )
@@ -903,51 +824,6 @@ ui <- dashboardPage(
         fluidRow(
           box(width = 6, title = "Top pagina's", tableOutput("website_paginas_tabel")),
           box(width = 6, title = "Verkeersbronnen", tableOutput("website_bronnen_tabel"))
-        )
-        
-      ),
-      
-      # WEBSITE PILOT
-      tabItem(
-        
-        tabName = "website_pilot",
-        
-        h2("Website Pilot Analyse"),
-        uiOutput("ga4_status_banner_pilot"),
-        
-        fluidRow(
-          column(3, kpi_card("Add To Cart stijging", textOutput("pilot_add_to_cart"))),
-          column(3, kpi_card("Checkout stijging", textOutput("pilot_checkout"))),
-          column(3, kpi_card("Purchase stijging", textOutput("pilot_purchase"))),
-          column(3, kpi_card("Mobiele conversie", textOutput("pilot_mobile_conversion")))
-        ),
-        
-        br(),
-        
-        fluidRow(
-          column(3, kpi_card("Sessies na pilot", format_number(data$website_pilot_na$sessions))),
-          column(3, kpi_card("Gebruikers na pilot", format_number(data$website_pilot_na$activeUsers))),
-          column(3, kpi_card("Pageviews na pilot", format_number(data$website_pilot_na$screenPageViews))),
-          column(3, kpi_card("Engagement",
-                             paste0(round(data$website_pilot_na$engagementRate * 100, 1), "%")))
-        ),
-        
-        br(),
-        
-        fluidRow(
-          box(width = 8, title = "Sessies voor vs na pilot",
-              plotlyOutput("website_pilot_sessions_plot", height = "350px")),
-          box(width = 4, title = "Apparaten na pilot",
-              plotlyOutput("website_pilot_devices_plot", height = "350px"))
-        ),
-        
-        fluidRow(
-          box(width = 6, title = "Conversiefunnel vóór pilot", tableOutput("pilot_funnel_voor")),
-          box(width = 6, title = "Conversiefunnel na pilot", tableOutput("pilot_funnel_na"))
-        ),
-        
-        fluidRow(
-          box(width = 12, title = "Resultaat pilot", htmlOutput("pilot_conclusie"))
         )
         
       ),
@@ -1487,7 +1363,6 @@ server <- function(input, output, session) {
     }
   })
   output$ga4_status_banner <- ga4_status_ui
-  output$ga4_status_banner_pilot <- ga4_status_ui
   
   output$website_bezoekers_plot <- renderPlotly({
     
@@ -1670,214 +1545,6 @@ server <- function(input, output, session) {
       hovertemplate = "<b>%{x}</b><br>Afspraken: %{y}<extra></extra>"
     ) |>
       basis_layout(y_titel = "Aantal afspraken")
-  })
-  
-  # WEBSITE PILOT
-  
-  pilot_percentage <- function(voor, na){
-    
-    if(length(voor) == 0 || length(na) == 0) return("0%")
-    
-    pct <- round(((na - voor) / voor) * 100, 1)
-    
-    paste0(
-      ifelse(pct > 0, "+", ""),
-      pct,
-      "%"
-    )
-    
-  }
-  
-  output$website_pilot_sessions_plot <- renderPlotly({
-    
-    voor <- data$website_pilot_dagelijks_voor
-    na <- data$website_pilot_dagelijks_na
-    
-    plot_ly() |>
-      
-      add_trace(
-        data = voor,
-        x = ~date,
-        y = ~sessions,
-        type = "scatter",
-        mode = "lines",
-        name = "Voor pilot",
-        line = list(color = "#9ca3af", width = 3)
-      ) |>
-      
-      add_trace(
-        data = na,
-        x = ~date,
-        y = ~sessions,
-        type = "scatter",
-        mode = "lines",
-        name = "Na pilot",
-        line = list(color = KLEUR_PRIMAIR, width = 3)
-      ) |>
-      
-      basis_layout(
-        y_titel = "Sessies",
-        legenda = TRUE
-      )
-    
-  })
-  
-  output$pilot_mobile_conversion <- renderText({
-    
-    voor <- data$website_pilot_devices_voor |>
-      filter(deviceCategory == "mobile") |>
-      pull(sessions)
-    
-    na <- data$website_pilot_devices_na |>
-      filter(deviceCategory == "mobile") |>
-      pull(sessions)
-    
-    pilot_percentage(
-      sum(voor),
-      sum(na)
-    )
-    
-  })
-  
-  output$website_pilot_devices_plot <- renderPlotly({
-    
-    maak_donut_plot(
-      data$website_pilot_devices_na,
-      "deviceCategory",
-      "sessions",
-      c(
-        KLEUR_PRIMAIR,
-        KLEUR_TERTIAIR,
-        KLEUR_LICHT
-      )
-    )
-    
-  })
-  
-  output$pilot_funnel_voor <- renderTable({
-    
-    data$website_pilot_funnel_voor |>
-      arrange(desc(eventCount))
-    
-  })
-  
-  output$pilot_funnel_na <- renderTable({
-    
-    data$website_pilot_funnel_na |>
-      arrange(desc(eventCount))
-    
-  })
-  
-  output$pilot_add_to_cart <- renderText({
-    
-    voor <- data$website_pilot_funnel_voor |>
-      filter(eventName == "add_to_cart") |>
-      pull(eventCount)
-    
-    na <- data$website_pilot_funnel_na |>
-      filter(eventName == "add_to_cart") |>
-      pull(eventCount)
-    
-    pilot_percentage(voor, na)
-    
-  })
-  output$pilot_purchase <- renderText({
-    
-    voor <- data$website_pilot_funnel_voor |>
-      filter(eventName == "purchase") |>
-      pull(eventCount)
-    
-    na <- data$website_pilot_funnel_na |>
-      filter(eventName == "purchase") |>
-      pull(eventCount)
-    
-    pilot_percentage(voor, na)
-    
-  })
-  
-  output$pilot_checkout <- renderText({
-    
-    voor <- data$website_pilot_funnel_voor |>
-      filter(eventName == "begin_checkout") |>
-      pull(eventCount)
-    
-    na <- data$website_pilot_funnel_na |>
-      filter(eventName == "begin_checkout") |>
-      pull(eventCount)
-    
-    pilot_percentage(voor, na)
-    
-  })
-  output$pilot_conclusie <- renderUI({
-    
-    get_event_count <- function(df, event) {
-      
-      waarde <- df |>
-        filter(eventName == event) |>
-        pull(eventCount)
-      
-      if(length(waarde) == 0) return(0)
-      
-      waarde
-      
-    }
-    
-    addcart_voor <- get_event_count(data$website_pilot_funnel_voor, "add_to_cart")
-    addcart_na <- get_event_count(data$website_pilot_funnel_na, "add_to_cart")
-    
-    checkout_voor <- get_event_count(data$website_pilot_funnel_voor, "begin_checkout")
-    checkout_na <- get_event_count(data$website_pilot_funnel_na, "begin_checkout")
-    
-    purchase_voor <- get_event_count(data$website_pilot_funnel_voor, "purchase")
-    purchase_na <- get_event_count(data$website_pilot_funnel_na, "purchase")
-    
-    addcart_pct <- round(((addcart_na - addcart_voor) / max(addcart_voor, 1)) * 100, 1)
-    checkout_pct <- round(((checkout_na - checkout_voor) / max(checkout_voor, 1)) * 100, 1)
-    purchase_pct <- round(((purchase_na - purchase_voor) / max(purchase_voor, 1)) * 100, 1)
-    
-    mobile_voor <- data$website_pilot_devices_voor |>
-      filter(deviceCategory == "mobile") |>
-      pull(sessions)
-    
-    mobile_na <- data$website_pilot_devices_na |>
-      filter(deviceCategory == "mobile") |>
-      pull(sessions)
-    
-    if(length(mobile_voor) == 0) mobile_voor <- 0
-    if(length(mobile_na) == 0) mobile_na <- 0
-    
-    mobile_pct <- round(((mobile_na - mobile_voor) / max(mobile_voor, 1)) * 100, 1)
-    
-    HTML(
-      paste0(
-        "<div style='padding:10px;'>",
-        "<h3>Resultaat Website Pilot</h3>",
-        "<table style='width:100%;font-size:16px;'>",
-        "<tr><td><b>Add To Cart</b></td><td>",
-        ifelse(addcart_pct >= 0, paste0("+", addcart_pct, "%"), paste0(addcart_pct, "%")),
-        "</td></tr>",
-        "<tr><td><b>Checkout Starts</b></td><td>",
-        ifelse(checkout_pct >= 0, paste0("+", checkout_pct, "%"), paste0(checkout_pct, "%")),
-        "</td></tr>",
-        "<tr><td><b>Purchases</b></td><td>",
-        ifelse(purchase_pct >= 0, paste0("+", purchase_pct, "%"), paste0(purchase_pct, "%")),
-        "</td></tr>",
-        "<tr><td><b>Mobiele sessies</b></td><td>",
-        ifelse(mobile_pct >= 0, paste0("+", mobile_pct, "%"), paste0(mobile_pct, "%")),
-        "</td></tr>",
-        "</table>",
-        "<br>",
-        "<p><b>Doorgevoerde wijzigingen:</b></p>",
-        "<ul>",
-        "<li>Sticky Add To Cart button mobiel</li>",
-        "<li>Verkorte checkout teksten</li>",
-        "<li>Verkort aanmeldformulier</li>",
-        "</ul>",
-        "</div>"
-        
-      )
-    )
-    
   })
   
 }
