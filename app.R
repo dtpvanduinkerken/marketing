@@ -355,6 +355,13 @@ leeg_website_funnel <- data.frame(
   eventCount = c(0, 0, 0, 0, 0)
 )
 
+leeg_verenigingen <- data.frame(
+  vereniging_id = character(0), vereniging = character(0), sport = character(0),
+  aantal_leden = numeric(0), aantal_members = numeric(0), datum = as.Date(character(0)),
+  pricing_code = character(0), vereniging_deal = character(0),
+  discount = numeric(0), omzet = numeric(0)
+)
+
 veilige_ga_data <- function(expr) {
   # Voert een ga_data(...) aanroep uit; geeft fallback terug bij fouten
   # of als er geen GA-auth beschikbaar is.
@@ -364,6 +371,91 @@ veilige_ga_data <- function(expr) {
     message("GA-call mislukt: ", conditionMessage(e))
     NULL
   })
+}
+
+normaliseer_vereniging_code <- function(x) {
+  x <- tolower(trimws(as.character(x)))
+  x <- sub("^twv[_ -]*", "", x)
+  gsub("[^a-z0-9]", "", x)
+}
+
+maak_verenigingen_dataset <- function(verenigingen, verenigingen_pricing) {
+  if (nrow(verenigingen) == 0) return(leeg_verenigingen)
+  names(verenigingen) <- gsub("\\.", " ", names(verenigingen))
+  verenigingen <- verenigingen |>
+    transmute(
+      vereniging_id = as.character(.data[["Vereniging ID"]]),
+      vereniging = trimws(as.character(.data[["Vereniging"]])),
+      sport = trimws(as.character(.data[["Sport"]])),
+      aantal_leden = suppressWarnings(as.numeric(gsub(",", ".", .data[["Aantal leden"]]))),
+      aantal_members = suppressWarnings(as.numeric(gsub(",", ".", .data[["Aantal members"]])))
+    ) |>
+    mutate(
+      aantal_leden = ifelse(is.na(aantal_leden), 0, aantal_leden),
+      aantal_members = ifelse(is.na(aantal_members), 0, aantal_members),
+      vereniging_id_match = normaliseer_vereniging_code(vereniging_id),
+      vereniging_match = normaliseer_vereniging_code(vereniging)
+    )
+  if (nrow(verenigingen_pricing) == 0) {
+    return(verenigingen |>
+      transmute(vereniging_id, vereniging, sport, aantal_leden, aantal_members,
+                datum = as.Date(NA), pricing_code = NA_character_,
+                vereniging_deal = NA_character_, discount = 0, omzet = 0))
+  }
+  names(verenigingen_pricing) <- gsub("\\.", "_", names(verenigingen_pricing))
+  pricing <- verenigingen_pricing |>
+    transmute(
+      datum = as.Date(.data[["datum"]], format = "%d-%m-%Y"),
+      pricing_code = trimws(as.character(.data[["pricing_code"]])),
+      vereniging_deal = trimws(as.character(.data[["vereniging_deal"]])),
+      discount = suppressWarnings(as.numeric(gsub(",", ".", .data[["discount"]]))),
+      omzet = suppressWarnings(as.numeric(gsub(",", ".", .data[["omzet"]]))),
+      pricing_match = normaliseer_vereniging_code(pricing_code)
+    ) |>
+    mutate(discount = ifelse(is.na(discount), 0, discount),
+           omzet = ifelse(is.na(omzet), 0, omzet))
+  match_index <- vapply(pricing$pricing_match, function(code) {
+    hits <- which(verenigingen$vereniging_id_match == code |
+                    verenigingen$vereniging_match == code |
+                    startsWith(verenigingen$vereniging_id_match, code) |
+                    startsWith(code, verenigingen$vereniging_id_match) |
+                    startsWith(verenigingen$vereniging_match, code) |
+                    startsWith(code, verenigingen$vereniging_match))
+    if (length(hits) > 0) hits[1] else NA_integer_
+  }, integer(1))
+  pricing_gematcht <- bind_cols(
+    verenigingen[match_index, c("vereniging_id", "vereniging", "sport", "aantal_leden", "aantal_members")],
+    pricing |> select(datum, pricing_code, vereniging_deal, discount, omzet)
+  )
+  zonder_pricing <- verenigingen |>
+    filter(!vereniging_id %in% pricing_gematcht$vereniging_id) |>
+    transmute(vereniging_id, vereniging, sport, aantal_leden, aantal_members,
+              datum = as.Date(NA), pricing_code = NA_character_,
+              vereniging_deal = NA_character_, discount = 0, omzet = 0)
+  bind_rows(pricing_gematcht, zonder_pricing) |> select(names(leeg_verenigingen))
+}
+
+laad_verenigingen_data <- function(con) {
+  verenigingen <- if (dbExistsTable(con, DBI::Id(schema = "raw", table = "verenigingen"))) {
+    dbGetQuery(con, "SELECT * FROM raw.verenigingen")
+  } else if (file.exists("data/raw/Verenigingen.csv")) {
+    read.csv2("data/raw/Verenigingen.csv", stringsAsFactors = FALSE, check.names = FALSE)
+  } else data.frame()
+  pricing <- if (dbExistsTable(con, DBI::Id(schema = "raw", table = "verenigingen_pricing"))) {
+    dbGetQuery(con, "SELECT * FROM raw.verenigingen_pricing")
+  } else if (file.exists("data/raw/verenigingen_pricing.csv")) {
+    read.csv2("data/raw/verenigingen_pricing.csv", stringsAsFactors = FALSE, check.names = FALSE)
+  } else data.frame()
+  maak_verenigingen_dataset(verenigingen, pricing)
+}
+
+maak_leeg_plot <- function() {
+  plot_ly() |> layout(
+    paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)",
+    xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
+    annotations = list(list(text = "Geen data voor deze selectie", showarrow = FALSE,
+                            font = list(color = "#9ca3af", size = 13)))
+  )
 }
 
 # --------------------------------------------------
@@ -418,6 +510,7 @@ FROM raw.afspraken
                                    "SELECT * FROM mart.coupon_performance ORDER BY omzet DESC")
   coupon_maand <- dbGetQuery(con, "SELECT * FROM mart.coupon_maand ORDER BY maand")
   coupon_detail <- dbGetQuery(con, "SELECT * FROM raw.coupons")
+  verenigingen <- laad_verenigingen_data(con)
 
   meta_bestand <- file.path("data", "raw", "meta_advertenties.csv")
   if (!file.exists(meta_bestand)) {
@@ -565,7 +658,8 @@ FROM raw.afspraken
     afspraken_kpis_detail = afspraken_kpis_detail,
     members_nieuw_7d = members_nieuw_7d,
     members_actief_slapend = members_actief_slapend,
-    meta_advertenties = meta_advertenties
+    meta_advertenties = meta_advertenties,
+    verenigingen = verenigingen
   )
 }
 
@@ -1140,7 +1234,7 @@ ui <- dashboardPage(
               div(
                 class = "home-heading",
                 div(
-                  h2("Managementoverzicht"),
+                  h2("Overzicht"),
                   p("Kernprestaties en commerciële ontwikkeling in één oogopslag.")
                 ),
                 div(class = "home-heading__date",
@@ -1405,8 +1499,31 @@ ui <- dashboardPage(
       # VERENIGINGEN
       tabItem(tabName = "verenigingen",
               h2("Verenigingen"),
-              div(class = "placeholder-melding",
-                  icon("clock"), p("Data wordt binnenkort beschikbaar gesteld."))
+              fluidRow(
+                column(6, selectInput("vereniging_select", "Selecteer vereniging",
+                                      choices = c("Alle", sort(unique(data$verenigingen$vereniging))))),
+                column(6, selectInput("sport_select", "Selecteer sport",
+                                      choices = c("Alle", sort(unique(data$verenigingen$sport)))))
+              ),
+              fluidRow(
+                column(3, kpi_card("Verenigingen", textOutput("verenigingen_aantal"), subtitel = "unieke verenigingen")),
+                column(3, kpi_card("Leden", textOutput("verenigingen_leden"), subtitel = "totaal aantal leden")),
+                column(3, kpi_card("Members", textOutput("verenigingen_members"), subtitel = "totaal aantal members")),
+                column(3, kpi_card("Omzet", textOutput("verenigingen_omzet"), subtitel = "via verenigingsdeals"))
+              ),
+              br(),
+              fluidRow(
+                box(width = 8, title = "Omzet per vereniging", plotlyOutput("verenigingen_omzet_plot", height = "360px")),
+                box(width = 4, title = "Members per sport", plotlyOutput("verenigingen_sport_plot", height = "360px"))
+              ),
+              fluidRow(
+                box(width = 6, title = "Leden versus members", plotlyOutput("verenigingen_leden_members_plot", height = "340px")),
+                box(width = 6, title = "Omzet door de tijd", plotlyOutput("verenigingen_tijd_plot", height = "340px"))
+              ),
+              fluidRow(
+                box(width = 6, title = "Performance per pricing code", tableOutput("verenigingen_pricing_tabel")),
+                box(width = 6, title = "Verenigingen overzicht", tableOutput("verenigingen_tabel"))
+              )
       ),
       
       # WEBSITE
@@ -1870,6 +1987,99 @@ server <- function(input, output, session) {
     if (is.na(waarde)) "n.v.t." else format_percentage(waarde)
   })
   
+  # VERENIGINGEN
+  verenigingen_filtered <- reactive({
+    df <- data$verenigingen
+    if (!is.null(input$vereniging_select) && input$vereniging_select != "Alle") {
+      df <- df |> filter(vereniging == input$vereniging_select)
+    }
+    if (!is.null(input$sport_select) && input$sport_select != "Alle") {
+      df <- df |> filter(sport == input$sport_select)
+    }
+    df
+  })
+
+  verenigingen_samenvatting <- reactive({
+    verenigingen_filtered() |>
+      group_by(vereniging_id, vereniging, sport) |>
+      summarise(aantal_leden = max(aantal_leden, na.rm = TRUE),
+                aantal_members = max(aantal_members, na.rm = TRUE),
+                omzet = sum(omzet, na.rm = TRUE),
+                discount = sum(discount, na.rm = TRUE), .groups = "drop") |>
+      mutate(aantal_leden = ifelse(is.infinite(aantal_leden), 0, aantal_leden),
+             aantal_members = ifelse(is.infinite(aantal_members), 0, aantal_members))
+  })
+
+  output$verenigingen_aantal <- renderText(format_number(n_distinct(verenigingen_samenvatting()$vereniging_id)))
+  output$verenigingen_leden <- renderText(format_number(sum(verenigingen_samenvatting()$aantal_leden, na.rm = TRUE)))
+  output$verenigingen_members <- renderText(format_number(sum(verenigingen_samenvatting()$aantal_members, na.rm = TRUE)))
+  output$verenigingen_omzet <- renderText(format_euro(sum(verenigingen_samenvatting()$omzet, na.rm = TRUE)))
+
+  output$verenigingen_omzet_plot <- renderPlotly({
+    plot_data <- verenigingen_samenvatting() |> arrange(desc(omzet)) |> head(10)
+    if (nrow(plot_data) == 0) return(maak_leeg_plot())
+    plot_ly(plot_data, x = ~omzet, y = ~reorder(vereniging, omzet), type = "bar",
+            orientation = "h", marker = list(color = KLEUR_PRIMAIR, opacity = .9),
+            hovertemplate = "<b>%{y}</b><br>\u20ac%{x:,.0f}<extra></extra>") |>
+      layout(paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)",
+             margin = list(l = 140, r = 8, t = 12, b = 40),
+             xaxis = list(title = "Omzet (\u20ac)", showgrid = TRUE, gridcolor = "#f0f3f6"),
+             yaxis = list(title = ""))
+  })
+
+  output$verenigingen_sport_plot <- renderPlotly({
+    plot_data <- verenigingen_samenvatting() |>
+      group_by(sport) |>
+      summarise(aantal_members = sum(aantal_members, na.rm = TRUE), .groups = "drop") |>
+      arrange(desc(aantal_members))
+    if (nrow(plot_data) == 0) return(maak_leeg_plot())
+    maak_donut_plot(plot_data, "sport", "aantal_members",
+                    c(KLEUR_PRIMAIR, KLEUR_SECUNDAIR, KLEUR_TERTIAIR, KLEUR_LICHT, "#9ca3af", "#d1d5db"))
+  })
+
+  output$verenigingen_leden_members_plot <- renderPlotly({
+    plot_data <- verenigingen_samenvatting() |> arrange(desc(aantal_leden)) |> head(10)
+    if (nrow(plot_data) == 0) return(maak_leeg_plot())
+    plot_ly(plot_data, x = ~vereniging, y = ~aantal_leden, type = "bar", name = "Leden",
+            marker = list(color = KLEUR_PRIMAIR),
+            hovertemplate = "<b>%{x}</b><br>Leden: %{y:,.0f}<extra></extra>") |>
+      add_trace(y = ~aantal_members, name = "Members", marker = list(color = KLEUR_TERTIAIR),
+                hovertemplate = "<b>%{x}</b><br>Members: %{y:,.0f}<extra></extra>") |>
+      basis_layout(y_titel = "Aantal", legenda = TRUE) |>
+      layout(barmode = "group", bargap = .35)
+  })
+
+  output$verenigingen_tijd_plot <- renderPlotly({
+    plot_data <- verenigingen_filtered() |>
+      filter(!is.na(datum)) |>
+      group_by(datum) |>
+      summarise(omzet = sum(omzet, na.rm = TRUE), .groups = "drop") |>
+      arrange(datum)
+    if (nrow(plot_data) == 0) return(maak_leeg_plot())
+    maak_lijn_plot(plot_data, "datum", "omzet", "Omzet (\u20ac)")
+  })
+
+  output$verenigingen_pricing_tabel <- renderTable({
+    verenigingen_filtered() |>
+      filter(!is.na(pricing_code)) |>
+      group_by(pricing_code, vereniging_deal) |>
+      summarise(omzet = sum(omzet, na.rm = TRUE), discount = sum(discount, na.rm = TRUE),
+                regels = n(), .groups = "drop") |>
+      arrange(desc(omzet)) |>
+      mutate(omzet = format_euro(omzet), discount = format_euro(abs(discount))) |>
+      rename("Pricing code" = pricing_code, "Vereniging deal" = vereniging_deal,
+             "Omzet" = omzet, "Korting" = discount, "Regels" = regels)
+  })
+
+  output$verenigingen_tabel <- renderTable({
+    verenigingen_samenvatting() |>
+      arrange(desc(omzet)) |>
+      mutate(omzet = format_euro(omzet), discount = format_euro(abs(discount))) |>
+      select(vereniging, sport, aantal_leden, aantal_members, omzet, discount) |>
+      rename("Vereniging" = vereniging, "Sport" = sport, "Aantal leden" = aantal_leden,
+             "Aantal members" = aantal_members, "Omzet" = omzet, "Korting" = discount)
+  })
+
   # SOCIAL MEDIA
   output$social_platform_plot <- renderPlotly({
     maak_bar_plot(data$social_media_platform, "platform", "views", "Views")
