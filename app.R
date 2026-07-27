@@ -609,6 +609,14 @@ bereken_members_7d_trend <- function(members_nieuw_7d) {
 
 members_7d_trend <- bereken_members_7d_trend(data$members_nieuw_7d)
 
+retentie_pct <- if (!is.na(data$klantgedrag$unieke_klanten[1]) &&
+                    data$klantgedrag$unieke_klanten[1] > 0) {
+  data$klantgedrag$terugkerende_klanten[1] /
+    data$klantgedrag$unieke_klanten[1] * 100
+} else {
+  0
+}
+
 # --------------------------------------------------
 # HOME PAGINA: INZICHTEN & ACTIEPUNTEN
 # --------------------------------------------------
@@ -1104,6 +1112,7 @@ ui <- dashboardPage(
   
   dashboardSidebar(
     sidebarMenu(
+      id = "sidebar",
       menuItem("Home",          tabName = "home",          icon = icon("house")),
       menuItem("Memberdeals",   tabName = "memberdeals",   icon = icon("tags")),
       menuItem("Coupons",       tabName = "coupons",       icon = icon("ticket")),
@@ -1132,7 +1141,7 @@ ui <- dashboardPage(
                 class = "home-heading",
                 div(
                   h2("Managementoverzicht"),
-                  p("De belangrijkste prestaties, signalen en acties op één plek.")
+                  p("Kernprestaties en commerciële ontwikkeling in één oogopslag.")
                 ),
                 div(class = "home-heading__date",
                     icon("calendar-day"),
@@ -1143,21 +1152,36 @@ ui <- dashboardPage(
                 column(3, kpi_card("Omzet",
                                    format_euro(data$pricing$totale_omzet),
                                    omzet_trend$class, omzet_trend$label, "t.o.v. vorige maand")),
-                column(3, kpi_card("Klanten",
-                                   format_number(data$klanten$unieke_klanten), subtitel = "unieke klanten")),
-                column(3, kpi_card("Open Rate",
-                                   paste0(round(data$marketing$open_rate, 1), "%"),
-                                   subtitel = "nieuwsbrief gemiddeld")),
+                column(3, kpi_card("Actieve members",
+                                   format_number(data$members_kpis$actieve_members_90d[1]),
+                                   subtitel = "minimaal één aankoop in 90 dagen")),
                 column(3, kpi_card("Afspraken",
-                                   format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt"))
+                                   format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt")),
+                column(3, kpi_card("Klantretentie",
+                                   format_percentage(retentie_pct),
+                                   subtitel = "aandeel terugkerende klanten"))
               ),
               fluidRow(
-                box(width = 5, title = "Omzetontwikkeling", class = "home-trend",
-                    div(class = "home-box-subtitle", "Maandelijkse omzet en richting van de laatste periode"),
-                    plotlyOutput("omzet_per_maand", height = "340px")),
-                box(width = 7, title = "Waar komt de omzet vandaan?", class = "home-locations",
-                    div(class = "home-box-subtitle", "Top 10 woonplaatsen op totale omzet"),
-                    plotlyOutput("omzet_woonplaats", height = "340px"))
+                box(width = 7, title = "Omzetontwikkeling", class = "home-trend",
+                    div(class = "home-box-subtitle", "Trend per maand; gebruik dit om structurele beweging te beoordelen"),
+                    plotlyOutput("omzet_per_maand", height = "330px")),
+                box(width = 5, title = "Omzet per memberdeal", class = "home-locations",
+                    div(class = "home-box-subtitle", "Verdeling over pricingcodes"),
+                    plotlyOutput("home_pricing_omzet", height = "330px"))
+              ),
+              div(
+                class = "home-navigation",
+                div(class = "home-navigation__heading",
+                    h3("Verdiep de analyse"),
+                    span("Open een detailpagina voor oorzaken, segmenten en campagnes")),
+                div(
+                  class = "home-navigation__grid",
+                  actionLink("home_go_members", "Members", icon = icon("users"), class = "home-nav-card"),
+                  actionLink("home_go_memberdeals", "Memberdeals", icon = icon("tags"), class = "home-nav-card"),
+                  actionLink("home_go_marketing", "Nieuwsbrieven", icon = icon("envelope"), class = "home-nav-card"),
+                  actionLink("home_go_website", "Website", icon = icon("globe"), class = "home-nav-card"),
+                  actionLink("home_go_afspraken", "Afspraken", icon = icon("calendar"), class = "home-nav-card")
+                )
               )
       ),
       
@@ -1521,6 +1545,29 @@ server <- function(input, output, session) {
     ) |>
       basis_layout(y_titel = "Omzet (\u20ac)")
   })
+
+  output$home_pricing_omzet <- renderPlotly({
+    plot_data <- data$pricing_performance |>
+      arrange(omzet)
+
+    plot_ly(
+      data = plot_data,
+      x = ~omzet,
+      y = ~reorder(pricing_code, omzet),
+      type = "bar",
+      orientation = "h",
+      marker = list(color = KLEUR_PRIMAIR, opacity = .9),
+      hovertemplate = "<b>%{y}</b><br>\u20ac%{x:,.0f}<extra></extra>"
+    ) |>
+      basis_layout(x_titel = "Omzet (\u20ac)", y_titel = "") |>
+      layout(margin = list(l = 90, r = 12, t = 8, b = 45), bargap = .38)
+  })
+
+  observeEvent(input$home_go_members, updateTabItems(session, "sidebar", "members"))
+  observeEvent(input$home_go_memberdeals, updateTabItems(session, "sidebar", "memberdeals"))
+  observeEvent(input$home_go_marketing, updateTabItems(session, "sidebar", "nieuwsbrieven"))
+  observeEvent(input$home_go_website, updateTabItems(session, "sidebar", "website"))
+  observeEvent(input$home_go_afspraken, updateTabItems(session, "sidebar", "afspraken"))
   
   # MEMBERDEALS
   output$pricing_omzet <- renderPlotly({
