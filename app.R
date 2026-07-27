@@ -1147,27 +1147,32 @@ ui <- dashboardPage(
                     icon("calendar-day"),
                     format(Sys.Date(), "%d %B %Y"))
               ),
-              fluidRow(
+              div(
                 class = "home-kpis",
-                column(3, kpi_card("Omzet",
-                                   format_euro(data$pricing$totale_omzet),
-                                   omzet_trend$class, omzet_trend$label, "t.o.v. vorige maand")),
-                column(3, kpi_card("Actieve members",
-                                   format_number(data$members_kpis$actieve_members_90d[1]),
-                                   subtitel = "minimaal één aankoop in 90 dagen")),
-                column(3, kpi_card("Afspraken",
-                                   format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt")),
-                column(3, kpi_card("Klantretentie",
-                                   format_percentage(retentie_pct),
-                                   subtitel = "aandeel terugkerende klanten"))
+                fluidRow(
+                  column(3, kpi_card("Omzet",
+                                     format_euro(data$pricing$totale_omzet),
+                                     omzet_trend$class, omzet_trend$label, "t.o.v. vorige maand")),
+                  column(3, kpi_card("Actieve members",
+                                     format_number(data$members_kpis$actieve_members_90d[1]),
+                                     subtitel = "minimaal één aankoop in 90 dagen")),
+                  column(3, kpi_card("Afspraken",
+                                     format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt")),
+                  column(3, kpi_card("Klantretentie",
+                                     format_percentage(retentie_pct),
+                                     subtitel = "aandeel terugkerende klanten"))
+                )
               ),
-              fluidRow(
-                box(width = 7, title = "Omzetontwikkeling", class = "home-trend",
-                    div(class = "home-box-subtitle", "Trend per maand; gebruik dit om structurele beweging te beoordelen"),
-                    plotlyOutput("omzet_per_maand", height = "330px")),
-                box(width = 5, title = "Omzet per memberdeal", class = "home-locations",
-                    div(class = "home-box-subtitle", "Verdeling over pricingcodes"),
-                    plotlyOutput("home_pricing_omzet", height = "330px"))
+              div(
+                class = "home-charts",
+                fluidRow(
+                  box(width = 7, title = "Omzetontwikkeling", class = "home-trend",
+                      div(class = "home-box-subtitle", "Trend per maand; gebruik dit om structurele beweging te beoordelen"),
+                      plotlyOutput("omzet_per_maand", height = "330px")),
+                  box(width = 5, title = "Omzet per memberdeal", class = "home-locations",
+                      div(class = "home-box-subtitle", "Verdeling over pricingcodes"),
+                      plotlyOutput("home_pricing_omzet", height = "330px"))
+                )
               ),
               div(
                 class = "home-navigation",
