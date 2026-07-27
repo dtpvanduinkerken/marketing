@@ -372,6 +372,56 @@ h2 {
 .signal-board__action strong { color: #4d7e12; }
 .signal-board__empty { color: #9ca3af; font-size: 11.5px; padding: 18px 8px; text-align: center; }
 
+/* Managementoverzicht per dashboardonderdeel */
+
+.mt-domain-overview { border: 1px solid #edf0f2; border-radius: 10px; overflow: hidden; }
+
+.mt-domain-overview__head,
+.mt-domain-row {
+  align-items: center;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: 150px 105px minmax(190px, .9fr) minmax(260px, 1.35fr);
+}
+
+.mt-domain-overview__head {
+  background: #f7f9fa;
+  color: #7b8491;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  padding: 9px 14px;
+  text-transform: uppercase;
+}
+
+.mt-domain-row { border-top: 1px solid #edf0f2; min-height: 58px; padding: 9px 14px; }
+.mt-domain-row:first-of-type { border-top: 0; }
+.mt-domain-row:hover { background: #fafcf7; }
+
+.mt-domain-row__domain { align-items: center; color: #263142; display: flex; font-size: 12.5px; font-weight: 700; gap: 9px; }
+.mt-domain-row__domain i { color: #8cbe26; text-align: center; width: 16px; }
+
+.mt-domain-row__status {
+  border-radius: 999px;
+  display: inline-block;
+  font-size: 10.5px;
+  font-weight: 700;
+  justify-self: start;
+  padding: 4px 8px;
+}
+
+.mt-domain-row__status--kritiek { background: #fdecea; color: #a52b22; }
+.mt-domain-row__status--waarschuwing { background: #fff4db; color: #8a5a00; }
+.mt-domain-row__status--positief { background: #eaf5d8; color: #466d14; }
+.mt-domain-row__status--stabiel { background: #eef2f5; color: #56616f; }
+.mt-domain-row__status--geblokkeerd { background: #f1eff8; color: #65558f; }
+
+.mt-domain-row__summary,
+.mt-domain-row__next { color: #596273; font-size: 11.5px; line-height: 1.4; }
+.mt-domain-row__summary strong { color: #263142; display: block; font-size: 12px; }
+.mt-domain-row__summary span { display: block; margin-top: 2px; }
+.mt-domain-row__next { color: #374151; }
+
 /* =====================================
    KPI CARDS
 ===================================== */
@@ -666,6 +716,20 @@ table th:not(:first-child) {
   .home-priorities .box-body,
   .home-trend .box-body { min-height: 0; }
   .signal-board { grid-template-columns: 1fr; }
+
+  .mt-domain-overview { border: 0; overflow: visible; }
+  .mt-domain-overview__head { display: none; }
+  .mt-domain-row {
+    border: 1px solid #edf0f2;
+    border-radius: 10px;
+    gap: 7px 10px;
+    grid-template-columns: 1fr auto;
+    margin-bottom: 9px;
+    padding: 12px;
+  }
+  .mt-domain-row__summary,
+  .mt-domain-row__next { grid-column: 1 / -1; }
+  .mt-domain-row__next { border-top: 1px solid #edf0f2; padding-top: 7px; }
 }
 
 .funnel-card {

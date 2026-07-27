@@ -1014,6 +1014,86 @@ inzicht_bord_ui <- function(inzichten) {
   )
 }
 
+# Eén managementregel per dashboardpagina: kernbeeld, status en concrete
+# vervolgstap. Waar een automatisch signaal bestaat, bepaalt dat de status en
+# actie. Anders tonen we de belangrijkste KPI met een bewaakactie.
+mt_domeinoverzicht_ui <- function(data, inzichten, website_data_beschikbaar) {
+  vind_inzicht <- function(categorieen) {
+    hits <- Filter(function(x) x$categorie %in% categorieen, inzichten)
+    if (length(hits) == 0) NULL else hits[[1]]
+  }
+
+  regel <- function(pagina, icoon, kernbeeld, categorieen = pagina,
+                    standaard_actie = "Geen directe actie; ontwikkeling blijven volgen.",
+                    vaste_status = NULL) {
+    inzicht <- vind_inzicht(categorieen)
+    status <- vaste_status %||% if (is.null(inzicht)) "stabiel" else inzicht$type
+    actie <- if (is.null(inzicht)) standaard_actie else inzicht$actie
+    conclusie <- if (is.null(inzicht)) kernbeeld else inzicht$titel
+
+    div(
+      class = "mt-domain-row",
+      div(class = "mt-domain-row__domain", icon(icoon), span(pagina)),
+      div(class = paste0("mt-domain-row__status mt-domain-row__status--", status),
+          switch(status,
+                 kritiek = "Direct actie",
+                 waarschuwing = "Aandacht",
+                 positief = "Positief",
+                 geblokkeerd = "Data ontbreekt",
+                 "Op koers")),
+      div(class = "mt-domain-row__summary",
+          strong(conclusie),
+          if (!identical(conclusie, kernbeeld)) span(kernbeeld)),
+      div(class = "mt-domain-row__next", actie)
+    )
+  }
+
+  meta <- data$meta_advertenties
+  meta_kern <- if (nrow(meta) > 0) {
+    paste0(format_number(meta$Resultaten[1]), " landingspaginaweergaven voor ",
+           format_euro_precies(meta$`Besteed bedrag (EUR)`[1]), ".")
+  } else "Geen campagnegegevens beschikbaar."
+
+  div(
+    class = "mt-domain-overview",
+    div(class = "mt-domain-overview__head",
+        span("Onderdeel"), span("Status"), span("Kernbeeld"), span("Vervolgstap")),
+    regel("Memberdeals", "tags",
+          paste0(format_euro(sum(data$pricing_performance$omzet, na.rm = TRUE)), " omzet uit memberdeals.")),
+    regel("Coupons", "ticket",
+          paste0(format_number(sum(data$coupon_detail$ingeleverd, na.rm = TRUE)), " coupons ingeleverd.")),
+    regel("Members", "users",
+          paste0(format_number(data$members_kpis$totaal_members[1]), " members, waarvan ",
+                 format_number(data$members_kpis$actieve_members_90d[1]), " actief in 90 dagen.")),
+    regel("Nieuwsbrieven", "envelope",
+          paste0("Gemiddelde open rate: ", format_percentage(data$marketing$open_rate[1]), "."),
+          categorieen = "Nieuwsbrief"),
+    regel("Social Media", "hashtag",
+          paste0(format_number(data$social_media_kpis$totaal_views[1]), " views; engagement rate ",
+                 format_percentage_precies(data$social_media_kpis$engagement_rate[1]), ".")),
+    regel("Advertenties", "bullhorn", meta_kern,
+          standaard_actie = "Campagneresultaten en kosten per resultaat bij de volgende rapportage evalueren."),
+    regel("Verenigingen", "people-group", "Er is nog geen databron aangesloten.",
+          standaard_actie = "Eigenaar en opleverdatum voor de databron vastleggen.",
+          vaste_status = "geblokkeerd"),
+    regel("Website", "globe",
+          if (website_data_beschikbaar) {
+            paste0(format_number(data$website_kpis$sessions[1]), " sessies; ",
+                   format_percentage(data$website_kpis$engagementRate[1] * 100), " engagement.")
+          } else "Live websitegegevens zijn niet beschikbaar.",
+          standaard_actie = if (website_data_beschikbaar) "Verkeer en checkout-uitval blijven volgen."
+                            else "GA4-koppeling herstellen en dataverversing controleren.",
+          vaste_status = if (website_data_beschikbaar) NULL else "geblokkeerd"),
+    regel("Afspraken", "calendar",
+          paste0(format_number(data$afspraken_kpis_detail$totaal_afspraken[1]), " afspraken over ",
+                 format_number(data$afspraken_kpis_detail$aantal_diensten[1]), " diensten.")),
+    regel("Cohortanalyse", "chart-line",
+          paste0(format_number(tail(data$members_groei$nieuwe_members, 1)),
+                 " nieuwe members in de laatst beschikbare maand."),
+          standaard_actie = "Groei en klantretentie per cohort maandelijks vergelijken.")
+  )
+}
+
 # --------------------------------------------------
 # UI
 # --------------------------------------------------
@@ -1072,18 +1152,18 @@ ui <- dashboardPage(
                                    format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt"))
               ),
               fluidRow(
-                box(width = 7, title = "Prioriteiten voor het MT", class = "home-priorities",
-                    div(class = "home-box-subtitle", "Open een signaal voor de onderbouwing en voorgestelde actie"),
-                    inzicht_bord_ui(inzichten_home)
-                ),
-                box(width = 5, title = "Omzetontwikkeling", class = "home-trend",
-                    div(class = "home-box-subtitle", "Maandelijkse omzet en richting van de laatste periode"),
-                    plotlyOutput("omzet_per_maand", height = "360px"))
+                box(width = 12, title = "Samenvatting en vervolgstappen", class = "home-priorities",
+                    div(class = "home-box-subtitle", "Per onderdeel het belangrijkste beeld en wat het MT ermee moet doen"),
+                    mt_domeinoverzicht_ui(data, inzichten_home, website_data_beschikbaar)
+                )
               ),
               fluidRow(
-                box(width = 12, title = "Waar komt de omzet vandaan?", class = "home-locations",
+                box(width = 5, title = "Omzetontwikkeling", class = "home-trend",
+                    div(class = "home-box-subtitle", "Maandelijkse omzet en richting van de laatste periode"),
+                    plotlyOutput("omzet_per_maand", height = "340px")),
+                box(width = 7, title = "Waar komt de omzet vandaan?", class = "home-locations",
                     div(class = "home-box-subtitle", "Top 10 woonplaatsen op totale omzet"),
-                    plotlyOutput("omzet_woonplaats", height = "360px"))
+                    plotlyOutput("omzet_woonplaats", height = "340px"))
               )
       ),
       
