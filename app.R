@@ -1161,7 +1161,8 @@ ui <- dashboardPage(
                   column(3, kpi_card("Klantretentie",
                                      format_percentage(retentie_pct),
                                      subtitel = "aandeel terugkerende klanten"))
-                )
+                ),
+                div(style = "height:32px; clear:both;", `aria-hidden` = "true")
               ),
               div(
                 class = "home-charts",
@@ -1172,7 +1173,8 @@ ui <- dashboardPage(
                   box(width = 5, title = "Omzet per memberdeal", class = "home-locations",
                       div(class = "home-box-subtitle", "Verdeling over pricingcodes"),
                       plotlyOutput("home_pricing_omzet", height = "330px"))
-                )
+                ),
+                div(style = "height:24px; clear:both;", `aria-hidden` = "true")
               ),
               div(
                 class = "home-navigation",

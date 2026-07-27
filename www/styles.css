@@ -201,8 +201,8 @@ h2 {
 }
 
 .home-heading__date i { color: #8cbe26; }
-.home-kpis { margin-bottom: 32px; }
-.home-charts { margin-bottom: 18px; }
+.home-kpis,
+.home-charts { display: flow-root; }
 .home-box-subtitle { color: #6b7280; font-size: 12.5px; margin: -8px 0 12px; }
 
 .home-priorities .box-body,
