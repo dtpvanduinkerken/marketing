@@ -179,6 +179,80 @@ h2 {
 }
 
 /* =====================================
+   HOME
+===================================== */
+
+.home-heading {
+  align-items: flex-end;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 22px;
+}
+
+.home-heading h2 { margin: 0 0 5px; }
+.home-heading p { color: #6b7280; font-size: 13.5px; margin: 0; }
+
+.home-heading__date {
+  align-items: center;
+  color: #6b7280;
+  display: flex;
+  font-size: 12.5px;
+  gap: 7px;
+}
+
+.home-heading__date i { color: #8cbe26; }
+.home-kpis { margin-bottom: 22px; }
+.home-box-subtitle { color: #6b7280; font-size: 12.5px; margin: -8px 0 12px; }
+
+.home-priorities .box-body,
+.home-trend .box-body { min-height: 455px; }
+
+.home-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home-insight {
+  align-items: flex-start;
+  background: #fafbfc;
+  border: 1px solid #edf0f2;
+  border-radius: 10px;
+  display: flex;
+  gap: 12px;
+  padding: 12px 14px;
+}
+
+.home-insight__icon {
+  align-items: center;
+  border-radius: 8px;
+  display: flex;
+  flex: 0 0 30px;
+  height: 30px;
+  justify-content: center;
+  margin-top: 1px;
+}
+
+.home-insight--kritiek .home-insight__icon { background: #fdecea; color: #b42318; }
+.home-insight--waarschuwing .home-insight__icon { background: #fff4db; color: #9a6700; }
+.home-insight--positief .home-insight__icon { background: #eaf5d8; color: #4d7e12; }
+.home-insight__content { min-width: 0; }
+
+.home-insight__meta {
+  color: #8a929f;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  margin-bottom: 2px;
+  text-transform: uppercase;
+}
+
+.home-insight__title { color: #1f2937; font-size: 13.5px; font-weight: 700; line-height: 1.35; }
+.home-insight__text { color: #596273; font-size: 12.5px; line-height: 1.45; margin-top: 3px; }
+.home-insight__action { color: #374151; font-size: 12px; line-height: 1.4; margin-top: 5px; }
+.home-insight__action strong { color: #4d7e12; }
+
+/* =====================================
    KPI CARDS
 ===================================== */
 
@@ -466,6 +540,11 @@ table th:not(:first-child) {
   .kpi-value {
     font-size: 26px;
   }
+
+  .home-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .home-kpis .col-sm-3 { margin-bottom: 12px; }
+  .home-priorities .box-body,
+  .home-trend .box-body { min-height: 0; }
 }
 
 .funnel-card {

@@ -885,12 +885,12 @@ genereer_inzichten <- function(data, omzet_trend, members_7d_trend,
   }, error = function(e) NULL)
   
   # Sorteer op belang: kritiek eerst, dan waarschuwing, dan positief.
-  # Beperk tot maximaal 8 kaarten zodat de homepage een korte
+  # Beperk tot maximaal 5 signalen zodat de homepage een korte
   # samenvatting blijft in plaats van een volledige data-dump.
   if (length(inzichten) > 0) {
     volgorde <- sapply(inzichten, function(x) switch(x$type, kritiek = 1, waarschuwing = 2, positief = 3, 4))
     inzichten <- inzichten[order(volgorde)]
-    if (length(inzichten) > 8) inzichten <- inzichten[1:8]
+    if (length(inzichten) > 5) inzichten <- inzichten[1:5]
   } else {
     inzichten <- list(list(
       type      = "positief",
@@ -923,28 +923,17 @@ inzicht_stijl <- list(
 inzicht_kaart_ui <- function(inzicht) {
   stijl <- inzicht_stijl[[inzicht$type]]
   div(
-    style = paste0(
-      "background:#ffffff;",
-      "border:1px solid ", stijl$rand, ";",
-      "border-left:4px solid ", stijl$rand, ";",
-      "border-radius:10px;",
-      "padding:13px 16px;",
-      "height:100%;"
+    class = paste0("home-insight home-insight--", inzicht$type),
+    div(
+      class = "home-insight__icon",
+      icon(stijl$icoon)
     ),
     div(
-      style = "display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap;",
-      span(style = "font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:#6b7280; background:#f3f4f6; border-radius:5px; padding:2px 7px;",
-           inzicht$categorie),
-      span(style = paste0("font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:", stijl$tekst,
-                          "; background:", stijl$bg, "; border-radius:5px; padding:2px 7px; display:inline-flex; align-items:center; gap:4px;"),
-           icon(stijl$icoon, style = "font-size:9.5px;"), stijl$label)
-    ),
-    div(style = "font-weight:700; font-size:14px; color:#1f2937; margin-bottom:4px; line-height:1.3;", inzicht$titel),
-    div(style = "font-size:13px; line-height:1.45; color:#374151; margin-bottom:9px;", inzicht$tekst),
-    div(
-      style = paste0("font-size:12.5px; line-height:1.4; background:", stijl$bg, "; color:", stijl$tekst,
-                     "; border-radius:7px; padding:7px 10px;"),
-      tags$strong("Actiepunt \u2192 "), inzicht$actie
+      class = "home-insight__content",
+      div(class = "home-insight__meta", inzicht$categorie, " · ", stijl$label),
+      div(class = "home-insight__title", inzicht$titel),
+      div(class = "home-insight__text", inzicht$tekst),
+      div(class = "home-insight__action", tags$strong("Volgende stap: "), inzicht$actie)
     )
   )
 }
@@ -1009,8 +998,19 @@ ui <- dashboardPage(
       
       # HOME
       tabItem(tabName = "home",
+              div(
+                class = "home-heading",
+                div(
+                  h2("Managementoverzicht"),
+                  p("De belangrijkste prestaties, signalen en acties op één plek.")
+                ),
+                div(class = "home-heading__date",
+                    icon("calendar-day"),
+                    format(Sys.Date(), "%d %B %Y"))
+              ),
               fluidRow(
-                column(3, kpi_card("Totale omzet",
+                class = "home-kpis",
+                column(3, kpi_card("Omzet",
                                    format_euro(data$pricing$totale_omzet),
                                    omzet_trend$class, omzet_trend$label, "t.o.v. vorige maand")),
                 column(3, kpi_card("Klanten",
@@ -1021,25 +1021,21 @@ ui <- dashboardPage(
                 column(3, kpi_card("Afspraken",
                                    format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt"))
               ),
-              br(),
               fluidRow(
-                box(width = 12, title = "Samenvatting voor het MT",
-                    div(style = "color:#6b7280; font-size:12.5px; margin-top:-10px; margin-bottom:12px;",
-                        paste0("Automatisch gegenereerd op basis van de actuele data \u2013 ",
-                               format(Sys.Date(), "%d-%m-%Y"), ".")),
+                box(width = 7, title = "Prioriteiten voor het MT", class = "home-priorities",
                     inzicht_samenvatting_ui(inzichten_home),
-                    div(
-                      style = "display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px;",
+                    div(class = "home-insights",
                       do.call(tagList, lapply(inzichten_home, inzicht_kaart_ui))
                     )
-                )
+                ),
+                box(width = 5, title = "Omzetontwikkeling", class = "home-trend",
+                    div(class = "home-box-subtitle", "Maandelijkse omzet en richting van de laatste periode"),
+                    plotlyOutput("omzet_per_maand", height = "360px"))
               ),
-              br(),
               fluidRow(
-                box(width = 8, title = "Top 10 woonplaatsen op omzet",
-                    plotlyOutput("omzet_woonplaats", height = "380px")),
-                box(width = 4, title = "Omzet per maand",
-                    plotlyOutput("omzet_per_maand", height = "380px"))
+                box(width = 12, title = "Waar komt de omzet vandaan?", class = "home-locations",
+                    div(class = "home-box-subtitle", "Top 10 woonplaatsen op totale omzet"),
+                    plotlyOutput("omzet_woonplaats", height = "360px"))
               )
       ),
       
