@@ -933,7 +933,11 @@ inzicht_kaart_ui <- function(inzicht) {
       div(class = "home-insight__meta", inzicht$categorie, " · ", stijl$label),
       div(class = "home-insight__title", inzicht$titel),
       div(class = "home-insight__text", inzicht$tekst),
-      div(class = "home-insight__action", tags$strong("Volgende stap: "), inzicht$actie)
+      tags$details(
+        class = "home-insight__details",
+        tags$summary("Bekijk actie"),
+        div(class = "home-insight__action", inzicht$actie)
+      )
     )
   )
 }

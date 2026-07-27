@@ -248,9 +248,37 @@ h2 {
 }
 
 .home-insight__title { color: #1f2937; font-size: 13.5px; font-weight: 700; line-height: 1.35; }
-.home-insight__text { color: #596273; font-size: 12.5px; line-height: 1.45; margin-top: 3px; }
-.home-insight__action { color: #374151; font-size: 12px; line-height: 1.4; margin-top: 5px; }
-.home-insight__action strong { color: #4d7e12; }
+.home-insight__text {
+  color: #596273;
+  font-size: 12px;
+  line-height: 1.4;
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-insight__details { margin-top: 5px; }
+
+.home-insight__details summary {
+  color: #4d7e12;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+  list-style-position: inside;
+  user-select: none;
+}
+
+.home-insight__details[open] summary { margin-bottom: 6px; }
+
+.home-insight__action {
+  background: #f3f7ec;
+  border-radius: 7px;
+  color: #374151;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 10px;
+}
 
 /* =====================================
    KPI CARDS
