@@ -2,5 +2,6 @@
 data/raw/*
 !data/raw/Verenigingen.csv
 !data/raw/verenigingen_pricing.csv
+!data/raw/meta_advertenties.csv
 .Rproj.user
 .secrets

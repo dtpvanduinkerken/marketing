@@ -475,3 +475,91 @@ table th:not(:first-child) {
 .funnel-card:hover {
   transform: translateY(-2px);
 }
+
+/* =====================================
+   META ADVERTENTIES
+===================================== */
+
+.campaign-banner {
+  background: linear-gradient(135deg, #ffffff 0%, #f3f8e8 100%);
+  border: 1px solid #e0ebc8;
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 20px;
+}
+
+.campaign-banner__eyebrow {
+  color: #6ca61c;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  margin-bottom: 6px;
+}
+
+.campaign-banner__title {
+  color: #111827;
+  font-size: 18px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.campaign-banner__meta {
+  align-items: center;
+  color: #6b7280;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  gap: 10px 18px;
+  margin-top: 10px;
+}
+
+.campaign-banner__meta i { margin-right: 5px; }
+
+.campaign-status {
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 9px;
+  text-transform: uppercase;
+}
+
+.campaign-status--active { background: #dcfce7; color: #15803d; }
+
+.campaign-detail {
+  border-bottom: 1px solid #f0f3f6;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 125px minmax(0, 1fr);
+  padding: 13px 0;
+}
+
+.campaign-detail:last-child { border-bottom: 0; }
+.campaign-detail__label { color: #6b7280; font-size: 12px; }
+.campaign-detail__value { color: #111827; font-size: 13px; font-weight: 600; overflow-wrap: anywhere; }
+
+.campaign-insight {
+  align-items: flex-start;
+  background: #f8fafc;
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+}
+
+.campaign-insight i { color: #6ca61c; margin-top: 3px; }
+.campaign-insight strong, .campaign-insight span { display: block; }
+.campaign-insight strong { color: #111827; font-size: 13.5px; margin-bottom: 3px; }
+.campaign-insight span { color: #6b7280; font-size: 12.5px; }
+
+.campaign-note {
+  color: #6b7280;
+  font-size: 12px;
+  padding: 5px 3px 0;
+}
+
+.campaign-note i { color: #8cbe26; margin-right: 6px; }
+
+@media (max-width: 768px) {
+  .campaign-detail { grid-template-columns: 1fr; gap: 4px; }
+}

@@ -171,6 +171,10 @@ format_percentage <- function(x) {
   paste0(format(round(x, 1), big.mark = ".", decimal.mark = ","), "%")
 }
 
+format_euro_precies <- function(x) {
+  paste0("\u20ac ", format(round(x, 2), nsmall = 2, big.mark = ".", decimal.mark = ","))
+}
+
 # --------------------------------------------------
 # HELPER: PLOT STIJL
 # --------------------------------------------------
@@ -414,6 +418,55 @@ FROM raw.afspraken
                                    "SELECT * FROM mart.coupon_performance ORDER BY omzet DESC")
   coupon_maand <- dbGetQuery(con, "SELECT * FROM mart.coupon_maand ORDER BY maand")
   coupon_detail <- dbGetQuery(con, "SELECT * FROM raw.coupons")
+
+  meta_bestand <- file.path("data", "raw", "meta_advertenties.csv")
+  if (!file.exists(meta_bestand)) {
+    stop("Meta-export niet gevonden op pad: '", meta_bestand, "'.")
+  }
+  meta_advertenties <- read.csv(
+    meta_bestand,
+    stringsAsFactors = FALSE,
+    check.names = FALSE,
+    encoding = "UTF-8"
+  )
+  namen_meta <- c(
+    "Campagnenaam", "Naam advertentieset", "Weergavestatus", "Bereik",
+    "Weergaven", "Frequentie", "Resultaattype", "Resultaten",
+    "Besteed bedrag (EUR)", "Kosten per resultaat", "Begint op",
+    "Eindigt op", "Start rapportage", "Einde rapportage"
+  )
+  ontbrekend_meta <- setdiff(namen_meta, names(meta_advertenties))
+  if (length(ontbrekend_meta) > 0) {
+    stop("Meta-export mist kolommen: ", paste(ontbrekend_meta, collapse = ", "))
+  }
+  meta_advertenties <- meta_advertenties |>
+    mutate(
+      Bereik = as.numeric(Bereik),
+      Weergaven = as.numeric(Weergaven),
+      Frequentie = as.numeric(Frequentie),
+      Resultaten = as.numeric(Resultaten),
+      `Besteed bedrag (EUR)` = as.numeric(`Besteed bedrag (EUR)`),
+      `Kosten per resultaat` = as.numeric(`Kosten per resultaat`),
+      `Begint op` = as.Date(`Begint op`),
+      `Eindigt op` = as.Date(`Eindigt op`),
+      `Start rapportage` = as.Date(`Start rapportage`),
+      `Einde rapportage` = as.Date(`Einde rapportage`)
+    )
+
+  meta_numerieke_kolommen <- c(
+    "Aankopen", "Kosten per aankoop", "Conversiewaarde aankopen",
+    "Conversiewaarde directe aankopen op website", "Aankopen op website",
+    "Directe aankopen op website", "Conversiewaarde door winkels ondersteunde aankopen",
+    "Door winkels ondersteunde aankopen",
+    "ROAS (rendement op advertentie-uitgaven) voor aankoop",
+    "In-app-aankopen", "Offline aankopen", "Aankopen op Meta",
+    "Conversiewaarde offline aankopen", "Conversiewaarde aankopen in mobiele app",
+    "Conversiewaarde aankopen op Meta", "ROAS voor aankoop voor website",
+    "ROAS voor aankoop in de app"
+  )
+  for (kolom in intersect(meta_numerieke_kolommen, names(meta_advertenties))) {
+    meta_advertenties[[kolom]] <- suppressWarnings(as.numeric(meta_advertenties[[kolom]]))
+  }
   
   members_nieuw_7d <- dbGetQuery(con, "
     SELECT
@@ -511,7 +564,8 @@ FROM raw.afspraken
     website_search_terms = website_search_terms,
     afspraken_kpis_detail = afspraken_kpis_detail,
     members_nieuw_7d = members_nieuw_7d,
-    members_actief_slapend = members_actief_slapend
+    members_actief_slapend = members_actief_slapend,
+    meta_advertenties = meta_advertenties
   )
 }
 
@@ -556,6 +610,372 @@ bereken_members_7d_trend <- function(members_nieuw_7d) {
 members_7d_trend <- bereken_members_7d_trend(data$members_nieuw_7d)
 
 # --------------------------------------------------
+# HOME PAGINA: INZICHTEN & ACTIEPUNTEN
+# --------------------------------------------------
+# Genereert automatisch een korte samenvatting van de belangrijkste
+# signalen uit de data voor het MT, elk gekoppeld aan een concreet en
+# relevant actiepunt. Dit zijn GEEN vaste, standaard teksten: alles
+# wordt berekend op basis van de actuele cijfers in de database, dus
+# de inhoud verandert mee zodra de data verandert. Elke afzonderlijke
+# check is met tryCatch afgeschermd, zodat een ontbrekende of
+# onverwachte waarde in één datamart nooit de hele homepage laat
+# crashen; die ene inzicht wordt dan gewoon overgeslagen.
+
+voeg_inzicht_toe <- function(lijst, type, categorie, titel, tekst, actie) {
+  # type: "kritiek" | "waarschuwing" | "positief"
+  append(lijst, list(list(type = type, categorie = categorie, titel = titel, tekst = tekst, actie = actie)))
+}
+
+# Nette weergave voor kleine percentages: format_percentage() rondt af op
+# 1 decimaal, waardoor een waarde als 0,03% als "0%" getoond zou worden en
+# dat oogt als een fout. Bij een waarde die niet nul is maar wel afrondt
+# naar 0,0 tonen we daarom "<0,1%" in plaats van een kale "0%".
+format_percentage_precies <- function(x) {
+  if (is.na(x)) return("n.v.t.")
+  if (x > 0 && round(x, 1) == 0) return("<0,1%")
+  format_percentage(x)
+}
+
+genereer_inzichten <- function(data, omzet_trend, members_7d_trend,
+                               website_data_beschikbaar) {
+  
+  inzichten <- list()
+  
+  # 1. OMZETONTWIKKELING -------------------------------------------------
+  tryCatch({
+    trend <- omzet_trend$waarde
+    if (!is.na(trend)) {
+      if (trend <= -5) {
+        inzichten <- voeg_inzicht_toe(inzichten, "kritiek", "Omzet",
+                                      "Omzet daalt significant",
+                                      paste0("De omzet is de afgelopen maand met ", format_percentage(abs(trend)),
+                                             " gedaald ten opzichte van de maand ervoor."),
+                                      "Analyseer per pricing-code en woonplaats welk segment de daling veroorzaakt en bespreek dit in het eerstvolgende MT-overleg.")
+      } else if (trend < 0) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Omzet",
+                                      "Omzet licht gedaald",
+                                      paste0("De omzet daalde met ", format_percentage(abs(trend)), " ten opzichte van de vorige maand."),
+                                      "Houd de ontwikkeling de komende weken in de gaten en vergelijk met hetzelfde seizoen vorig jaar voordat je ingrijpt.")
+      } else if (trend >= 10) {
+        inzichten <- voeg_inzicht_toe(inzichten, "positief", "Omzet",
+                                      "Sterke omzetgroei",
+                                      paste0("De omzet steeg met ", format_percentage(trend), " ten opzichte van de vorige maand."),
+                                      "Breng in kaart welke actie (campagne, coupon, seizoen) deze groei verklaart, zodat dit herhaald kan worden.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 2. NIEUWE MEMBERS (7 DAGEN) ------------------------------------------
+  tryCatch({
+    afgelopen <- data$members_nieuw_7d$afgelopen_7d[1]
+    vorige    <- data$members_nieuw_7d$vorige_7d[1]
+    if (!is.na(afgelopen) && !is.na(vorige) && vorige > 0) {
+      trend <- round((afgelopen - vorige) / vorige * 100, 1)
+      if (trend <= -25) {
+        inzichten <- voeg_inzicht_toe(inzichten, "kritiek", "Members",
+                                      "Aanmeldingen van nieuwe members vallen sterk terug",
+                                      paste0("In de afgelopen 7 dagen meldden zich ", format_number(afgelopen),
+                                             " nieuwe members aan, tegenover ", format_number(vorige),
+                                             " in de week ervoor (", format_percentage(trend), ")."),
+                                      "Controleer of wervingskanalen (social, website, verenigingen) nog goed lopen en overweeg een korte wervingsactie.")
+      } else if (trend >= 25) {
+        inzichten <- voeg_inzicht_toe(inzichten, "positief", "Members",
+                                      "Piek in nieuwe aanmeldingen",
+                                      paste0("Het aantal nieuwe members steeg deze week naar ", format_number(afgelopen),
+                                             ", een stijging van ", format_percentage(trend), " t.o.v. vorige week."),
+                                      "Onderzoek welke actie of kanaal hiervoor zorgde en zet hier bewust extra budget of aandacht op.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 3. KLANTRETENTIE -------------------------------------------------------
+  tryCatch({
+    terugkerend <- data$klantgedrag$terugkerende_klanten[1]
+    uniek       <- data$klantgedrag$unieke_klanten[1]
+    if (!is.na(terugkerend) && !is.na(uniek) && uniek > 0) {
+      retentie_pct <- round(terugkerend / uniek * 100, 1)
+      if (retentie_pct < 25) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Klanten",
+                                      "Laag aandeel terugkerende klanten",
+                                      paste0("Slechts ", format_percentage(retentie_pct), " van de klanten (",
+                                             format_number(terugkerend), " van de ", format_number(uniek), ") komt terug voor een herhaalaankoop."),
+                                      "Zet een opvolgcampagne of loyaliteitsactie op voor eenmalige klanten, bijvoorbeeld via een gerichte nieuwsbrief of coupon.")
+      } else if (retentie_pct >= 50) {
+        inzichten <- voeg_inzicht_toe(inzichten, "positief", "Klanten",
+                                      "Sterke klantloyaliteit",
+                                      paste0(format_percentage(retentie_pct), " van de klanten keert terug voor een herhaalaankoop."),
+                                      "Onderzoek wat deze groep drijft (dienst, coupon, moment) en gebruik dit als basis voor de werving van nieuwe klanten.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 4. MEMBERS: ACTIEF VS SLAPEND -----------------------------------------
+  # Let op: dit gaat over het totale ledenbestand in raw.members (alle
+  # ooit aangemelde members), niet over de "unieke klanten" uit de
+  # klantenkaart bovenaan de pagina — dat is een kleinere, andere groep
+  # (mensen met minimaal 1 transactie). Vandaar dat de aantallen sterk
+  # kunnen verschillen; dit is geen rekenfout.
+  tryCatch({
+    df <- data$members_actief_slapend
+    slapend <- sum(df$aantal[df$status == "Slapend"], na.rm = TRUE)
+    totaal  <- sum(df$aantal, na.rm = TRUE)
+    if (totaal > 0) {
+      slapend_pct <- round(slapend / totaal * 100, 1)
+      if (slapend_pct >= 50) {
+        inzichten <- voeg_inzicht_toe(inzichten, "kritiek", "Members",
+                                      "Meer dan helft van de leden is slapend",
+                                      paste0(format_percentage(slapend_pct), " van alle leden in het memberprogramma (",
+                                             format_number(slapend), " van de ", format_number(totaal),
+                                             ") heeft al 90+ dagen niets gekocht."),
+                                      "Start een reactivatiecampagne met een gerichte coupon of nieuwsbrief specifiek voor slapende members.")
+      } else if (slapend_pct >= 35) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Members",
+                                      "Aandeel slapende leden loopt op",
+                                      paste0(format_percentage(slapend_pct), " van de leden heeft al 90+ dagen niets gekocht."),
+                                      "Overweeg een reactivatie-actie voordat dit aandeel verder oploopt.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 5. COUPONS: VERZILVERING --------------------------------------------
+  # Optelling over álle coupons en alle datums samen (raw.coupons bevat
+  # per coupon meerdere datumregels), dezelfde rekenwijze als de
+  # KPI-kaarten op de Coupons-pagina zelf.
+  tryCatch({
+    df <- data$coupon_detail
+    verzonden  <- sum(df$verzonden, na.rm = TRUE)
+    ingeleverd <- sum(df$ingeleverd, na.rm = TRUE)
+    openstaand <- sum(df$openstaand, na.rm = TRUE)
+    if (verzonden > 0) {
+      inlever_pct <- round(ingeleverd / verzonden * 100, 1)
+      open_pct    <- round(openstaand / verzonden * 100, 1)
+      if (inlever_pct < 15) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Coupons",
+                                      "Coupons worden nauwelijks verzilverd",
+                                      paste0("Over alle coupons samen wordt slechts ", format_percentage_precies(inlever_pct),
+                                             " van de verzonden coupons daadwerkelijk ingeleverd (", format_number(ingeleverd),
+                                             " van de ", format_number(verzonden), "); ", format_percentage_precies(open_pct), " staat nog open."),
+                                      "Herzie de voorwaarden (kortingshoogte, geldigheidsduur) of promoot lopende coupons opnieuw via de nieuwsbrief.")
+      } else if (open_pct >= 40) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Coupons",
+                                      "Veel coupons staan nog open",
+                                      paste0(format_percentage(open_pct), " van de verzonden coupons is nog niet gebruikt."),
+                                      "Stuur een herinnering naar klanten met een openstaande coupon, zeker als de vervaldatum nadert.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 6. NIEUWSBRIEF PERFORMANCE ---------------------------------------------
+  tryCatch({
+    df <- data$newsletter_campagnes
+    verzonden <- sum(df$sent, na.rm = TRUE)
+    if (verzonden > 0 && nrow(df) > 0) {
+      open_rate_gem <- mean(df$opens / df$sent * 100, na.rm = TRUE)
+      unsub_rate_gem <- mean(df$unsubscribers / df$sent * 100, na.rm = TRUE)
+      laatste <- df[which.max(as.Date(df$datum)), ]
+      laatste_open_rate <- laatste$opens / laatste$sent * 100
+      
+      if (open_rate_gem < 15) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Nieuwsbrief",
+                                      "Open rate nieuwsbrief onder benchmark",
+                                      paste0("De gemiddelde open rate over alle campagnes is ", format_percentage(open_rate_gem),
+                                             ", terwijl 20-25% gebruikelijk is in deze sector."),
+                                      "Test andere onderwerpregels en verzendmomenten, en overweeg de lijst op te schonen van inactieve ontvangers.")
+      }
+      if (!is.na(laatste_open_rate) && laatste_open_rate < open_rate_gem * 0.7) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Nieuwsbrief",
+                                      "Laatste nieuwsbrief presteerde ondermaats",
+                                      paste0("De laatste campagne (", format(as.Date(laatste$datum), "%d-%m-%Y"),
+                                             ") haalde een open rate van ", format_percentage(laatste_open_rate),
+                                             ", ruim onder het gemiddelde van ", format_percentage(open_rate_gem), "."),
+                                      "Bekijk onderwerpregel en verzendmoment van deze specifieke campagne en pas dit aan voor de volgende editie.")
+      }
+      if (unsub_rate_gem >= 1) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Nieuwsbrief",
+                                      "Verhoogd aantal afmeldingen bij nieuwsbrief",
+                                      paste0("Gemiddeld meldt ", format_percentage(unsub_rate_gem), " van de ontvangers zich per verzending af."),
+                                      "Controleer de verzendfrequentie en relevantie van de inhoud; overweeg segmentatie op interesse.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 7. SOCIAL MEDIA ---------------------------------------------------------
+  tryCatch({
+    eng_rate <- data$social_media_kpis$engagement_rate[1]
+    if (!is.na(eng_rate)) {
+      if (eng_rate < 1) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Social Media",
+                                      "Lage engagement rate op social media",
+                                      paste0("De gemiddelde engagement rate is ", format_percentage_precies(eng_rate), "."),
+                                      "Vergelijk contentformats via de post type performance en zet vaker in op het best presterende type.")
+      }
+    }
+    pt <- data$post_type_performance
+    if (nrow(pt) >= 2) {
+      beste <- pt[which.max(pt$gemiddelde_engagement), ]
+      inzichten <- voeg_inzicht_toe(inzichten, "positief", "Social Media",
+                                    paste0("Post type '", beste$post_type, "' presteert het best"),
+                                    paste0("Dit type post scoort gemiddeld de hoogste engagement (",
+                                           format_number(beste$gemiddelde_engagement), " per post)."),
+                                    paste0("Plan de komende periode vaker content van het type '", beste$post_type, "' in.")
+      )
+    }
+  }, error = function(e) NULL)
+  
+  # 8. AFSPRAKEN: CONCENTRATIE OP ÉÉN DIENST -------------------------------
+  tryCatch({
+    df <- data$afspraken_per_dienst
+    totaal <- sum(df$totaal, na.rm = TRUE)
+    if (totaal > 0 && nrow(df) > 1) {
+      top <- df[which.max(df$totaal), ]
+      aandeel <- round(top$totaal / totaal * 100, 1)
+      if (aandeel >= 50) {
+        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Afspraken",
+                                      "Sterke afhankelijkheid van één dienst",
+                                      paste0("'", top$dienst, "' is goed voor ", format_percentage(aandeel),
+                                             " van alle geboekte afspraken."),
+                                      "Onderzoek of overige diensten meer promotie nodig hebben om de afhankelijkheid van deze ene dienst te verkleinen.")
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 9. MEMBERDEALS / PRICING: ZWAKSTE CODE ---------------------------------
+  tryCatch({
+    df <- data$pricing_performance
+    if (nrow(df) >= 2) {
+      zwakste <- df[which.min(df$omzet), ]
+      totaal_omzet <- sum(df$omzet, na.rm = TRUE)
+      if (totaal_omzet > 0) {
+        aandeel <- round(zwakste$omzet / totaal_omzet * 100, 1)
+        if (aandeel < 3) {
+          inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Memberdeals",
+                                        paste0("Pricing-code '", zwakste$pricing_code, "' presteert nauwelijks"),
+                                        paste0("Deze code is verantwoordelijk voor slechts ", format_percentage_precies(aandeel),
+                                               " van de omzet uit memberdeals (", format_euro(zwakste$omzet), " op een totaal van ",
+                                               format_euro(totaal_omzet), ")."),
+                                        paste0("Evalueer of '", zwakste$pricing_code, "' nog relevant is, of dat de voorwaarden/zichtbaarheid aangepast moeten worden.")
+          )
+        }
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # 10. WEBSITE: GROOTSTE UITVAL IN CHECKOUT-FUNNEL ------------------------
+  tryCatch({
+    if (website_data_beschikbaar) {
+      stappen <- c("page_view", "view_item", "add_to_cart", "begin_checkout", "purchase")
+      labels  <- c("Paginabezoek", "Product bekeken", "Winkelwagen", "Checkout", "Aankoop")
+      df <- data$website_checkout_funnel
+      counts <- sapply(stappen, function(s) {
+        w <- df$eventCount[df$eventName == s]
+        if (length(w) == 0) NA else w[1]
+      })
+      if (all(!is.na(counts)) && counts[1] > 0) {
+        uitval_pct <- round(100 - (counts[-1] / counts[-length(counts)] * 100), 1)
+        i <- which.max(uitval_pct)
+        if (!is.na(uitval_pct[i]) && uitval_pct[i] >= 60) {
+          inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Website",
+                                        "Grootste uitval in de checkout-funnel",
+                                        paste0("Van '", labels[i], "' naar '", labels[i + 1], "' haakt ",
+                                               format_percentage(uitval_pct[i]), " van de bezoekers af."),
+                                        paste0("Bekijk deze stap in de funnel op de Website-pagina en onderzoek drempels zoals laadtijd, verzendkosten of het aantal stappen."))
+        }
+      }
+    }
+  }, error = function(e) NULL)
+  
+  # Sorteer op belang: kritiek eerst, dan waarschuwing, dan positief.
+  # Beperk tot maximaal 8 kaarten zodat de homepage een korte
+  # samenvatting blijft in plaats van een volledige data-dump.
+  if (length(inzichten) > 0) {
+    volgorde <- sapply(inzichten, function(x) switch(x$type, kritiek = 1, waarschuwing = 2, positief = 3, 4))
+    inzichten <- inzichten[order(volgorde)]
+    if (length(inzichten) > 8) inzichten <- inzichten[1:8]
+  } else {
+    inzichten <- list(list(
+      type      = "positief",
+      categorie = "Algemeen",
+      titel     = "Geen bijzonderheden",
+      tekst     = "Op basis van de huidige data wijkt niets significant af van de verwachte bandbreedtes.",
+      actie     = "Geen directe actie nodig; blijf de KPI's hieronder volgen."
+    ))
+  }
+  
+  inzichten
+}
+
+inzichten_home <- genereer_inzichten(data, omzet_trend, members_7d_trend,
+                                     website_data_beschikbaar)
+
+# --------------------------------------------------
+# HOME PAGINA: WEERGAVE VAN EEN INZICHT-KAART
+# --------------------------------------------------
+
+inzicht_stijl <- list(
+  kritiek      = list(bg = "#fdecea", rand = "#f5c2c0", tekst = "#7a1f1f", icoon = "triangle-exclamation", label = "Kritiek"),
+  waarschuwing = list(bg = "#fff7e6", rand = "#f5cf87", tekst = "#8a5a00", icoon = "circle-exclamation", label = "Aandachtspunt"),
+  positief     = list(bg = "#eaf5d8", rand = "#c5e07a", tekst = "#3d5c0f", icoon = "circle-check", label = "Positief")
+)
+
+# Compacte kaart: categorie-pill + status-pill boven de titel, actiepunt
+# visueel losgekoppeld van de constatering zodat het onderscheid tussen
+# "wat zien we" en "wat doen we ermee" in één oogopslag duidelijk is.
+inzicht_kaart_ui <- function(inzicht) {
+  stijl <- inzicht_stijl[[inzicht$type]]
+  div(
+    style = paste0(
+      "background:#ffffff;",
+      "border:1px solid ", stijl$rand, ";",
+      "border-left:4px solid ", stijl$rand, ";",
+      "border-radius:10px;",
+      "padding:13px 16px;",
+      "height:100%;"
+    ),
+    div(
+      style = "display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap;",
+      span(style = "font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:#6b7280; background:#f3f4f6; border-radius:5px; padding:2px 7px;",
+           inzicht$categorie),
+      span(style = paste0("font-size:10.5px; font-weight:700; letter-spacing:.03em; text-transform:uppercase; color:", stijl$tekst,
+                          "; background:", stijl$bg, "; border-radius:5px; padding:2px 7px; display:inline-flex; align-items:center; gap:4px;"),
+           icon(stijl$icoon, style = "font-size:9.5px;"), stijl$label)
+    ),
+    div(style = "font-weight:700; font-size:14px; color:#1f2937; margin-bottom:4px; line-height:1.3;", inzicht$titel),
+    div(style = "font-size:13px; line-height:1.45; color:#374151; margin-bottom:9px;", inzicht$tekst),
+    div(
+      style = paste0("font-size:12.5px; line-height:1.4; background:", stijl$bg, "; color:", stijl$tekst,
+                     "; border-radius:7px; padding:7px 10px;"),
+      tags$strong("Actiepunt \u2192 "), inzicht$actie
+    )
+  )
+}
+
+# Samenvattingsbalk boven de kaarten: in één oogopslag zien hoeveel
+# kritieke, aandachts- en positieve signalen er zijn, zonder alles te
+# hoeven lezen.
+inzicht_samenvatting_ui <- function(inzichten) {
+  types <- vapply(inzichten, function(x) x$type, character(1))
+  telling <- table(factor(types, levels = c("kritiek", "waarschuwing", "positief")))
+  
+  pil <- function(type, label) {
+    stijl <- inzicht_stijl[[type]]
+    n <- unname(telling[type])
+    div(
+      style = paste0("display:inline-flex; align-items:center; gap:6px; background:", stijl$bg,
+                     "; color:", stijl$tekst, "; border-radius:20px; padding:5px 12px; font-size:12.5px; font-weight:600;"),
+      icon(stijl$icoon, style = "font-size:11px;"),
+      paste0(n, " ", label)
+    )
+  }
+  
+  div(
+    style = "display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;",
+    pil("kritiek", if (unname(telling["kritiek"]) == 1) "kritiek punt" else "kritieke punten"),
+    pil("waarschuwing", if (unname(telling["waarschuwing"]) == 1) "aandachtspunt" else "aandachtspunten"),
+    pil("positief", if (unname(telling["positief"]) == 1) "positief signaal" else "positieve signalen")
+  )
+}
+
+# --------------------------------------------------
 # UI
 # --------------------------------------------------
 
@@ -571,6 +991,7 @@ ui <- dashboardPage(
       menuItem("Members",       tabName = "members",       icon = icon("users")),
       menuItem("Nieuwsbrieven", tabName = "nieuwsbrieven", icon = icon("envelope")),
       menuItem("Social Media",  tabName = "social_media",  icon = icon("hashtag")),
+      menuItem("Advertenties",  tabName = "advertenties",  icon = icon("bullhorn")),
       menuItem("Verenigingen",  tabName = "verenigingen",  icon = icon("people-group")),
       menuItem("Website",       tabName = "website",       icon = icon("globe")),
       menuItem("Afspraken",     tabName = "afspraken",     icon = icon("calendar")),
@@ -599,6 +1020,19 @@ ui <- dashboardPage(
                                    subtitel = "nieuwsbrief gemiddeld")),
                 column(3, kpi_card("Afspraken",
                                    format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt"))
+              ),
+              br(),
+              fluidRow(
+                box(width = 12, title = "Samenvatting voor het MT",
+                    div(style = "color:#6b7280; font-size:12.5px; margin-top:-10px; margin-bottom:12px;",
+                        paste0("Automatisch gegenereerd op basis van de actuele data \u2013 ",
+                               format(Sys.Date(), "%d-%m-%Y"), ".")),
+                    inzicht_samenvatting_ui(inzichten_home),
+                    div(
+                      style = "display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:10px;",
+                      do.call(tagList, lapply(inzichten_home, inzicht_kaart_ui))
+                    )
+                )
               ),
               br(),
               fluidRow(
@@ -783,6 +1217,42 @@ ui <- dashboardPage(
               )
       ),
       
+      # META ADVERTENTIES
+      tabItem(
+        tabName = "advertenties",
+        h2("Social media advertentie"),
+        uiOutput("meta_campagne_header"),
+        fluidRow(
+          column(4, kpi_card("Bereik", textOutput("meta_bereik"), subtitel = "unieke personen")),
+          column(4, kpi_card("Vertoningen", textOutput("meta_weergaven"), subtitel = "totaal weergegeven")),
+          column(4, kpi_card("Landingspaginaweergaven", textOutput("meta_resultaten"), subtitel = "door Meta toegeschreven"))
+        ),
+        br(),
+        fluidRow(
+          column(4, kpi_card("Besteed bedrag", textOutput("meta_spend"), subtitel = "inclusief campagnelooptijd")),
+          column(4, kpi_card("Kosten per resultaat", textOutput("meta_kosten_resultaat"), subtitel = "spend / landingspaginaweergave")),
+          column(4, kpi_card("Landingspaginapercentage", textOutput("meta_resultaat_rate"), subtitel = "resultaten / vertoningen"))
+        ),
+        br(),
+        h3("Omzetmeting"),
+        fluidRow(
+          column(4, kpi_card("Directe websiteaankopen", textOutput("meta_aankopen"), subtitel = "door Meta gerapporteerd")),
+          column(4, kpi_card("Toegeschreven omzet", textOutput("meta_omzet"), subtitel = "aankoopwaarde in Meta")),
+          column(4, kpi_card("ROAS", textOutput("meta_roas"), subtitel = "omzet / advertentiekosten"))
+        ),
+        br(),
+        fluidRow(
+          box(width = 7, title = "Van vertoning naar landingspagina",
+              plotlyOutput("meta_funnel_plot", height = "380px")),
+          box(width = 5, title = "Campagnedetails",
+              uiOutput("meta_details"))
+        ),
+        fluidRow(
+          box(width = 12, title = "Interpretatie",
+              uiOutput("meta_inzichten"))
+        )
+      ),
+
       # VERENIGINGEN
       tabItem(tabName = "verenigingen",
               h2("Verenigingen"),
@@ -1301,6 +1771,113 @@ server <- function(input, output, session) {
         "Gem. views"          = gemiddelde_views,
         "Gem. engagement"     = gemiddelde_engagement
       )
+  })
+
+  # META ADVERTENTIES
+  meta_campagne <- reactive({
+    req(nrow(data$meta_advertenties) > 0)
+    data$meta_advertenties[1, , drop = FALSE]
+  })
+
+  output$meta_campagne_header <- renderUI({
+    x <- meta_campagne()
+    div(
+      class = "campaign-banner",
+      div(class = "campaign-banner__eyebrow", "META CAMPAGNE"),
+      div(class = "campaign-banner__title", x$Campagnenaam),
+      div(
+        class = "campaign-banner__meta",
+        span(icon("calendar"), paste(format(x$`Begint op`, "%d-%m-%Y"), "t/m", format(x$`Eindigt op`, "%d-%m-%Y"))),
+        span(class = paste0("campaign-status campaign-status--", tolower(x$Weergavestatus)), x$Weergavestatus),
+        span(paste("Rapportage t/m", format(x$`Einde rapportage`, "%d-%m-%Y")))
+      )
+    )
+  })
+
+  output$meta_bereik <- renderText(format_number(meta_campagne()$Bereik))
+  output$meta_weergaven <- renderText(format_number(meta_campagne()$Weergaven))
+  output$meta_resultaten <- renderText(format_number(meta_campagne()$Resultaten))
+  output$meta_spend <- renderText(format_euro_precies(meta_campagne()$`Besteed bedrag (EUR)`))
+  output$meta_kosten_resultaat <- renderText(format_euro_precies(meta_campagne()$`Kosten per resultaat`))
+  output$meta_resultaat_rate <- renderText({
+    x <- meta_campagne()
+    format_percentage(x$Resultaten / x$Weergaven * 100)
+  })
+  output$meta_aankopen <- renderText({
+    x <- meta_campagne()
+    waarde <- if ("Directe aankopen op website" %in% names(x)) x$`Directe aankopen op website` else NA_real_
+    if (is.na(waarde)) "Niet gemeten" else format_number(waarde)
+  })
+  output$meta_omzet <- renderText({
+    x <- meta_campagne()
+    waarde <- if ("Conversiewaarde aankopen" %in% names(x)) x$`Conversiewaarde aankopen` else NA_real_
+    if (is.na(waarde)) "Niet gemeten" else format_euro_precies(waarde)
+  })
+  output$meta_roas <- renderText({
+    x <- meta_campagne()
+    waarde <- if ("ROAS (rendement op advertentie-uitgaven) voor aankoop" %in% names(x)) {
+      x$`ROAS (rendement op advertentie-uitgaven) voor aankoop`
+    } else {
+      NA_real_
+    }
+    if (is.na(waarde)) "Niet berekenbaar" else paste0(format(round(waarde, 2), nsmall = 2, decimal.mark = ","), "x")
+  })
+
+  output$meta_funnel_plot <- renderPlotly({
+    x <- meta_campagne()
+    funnel <- data.frame(
+      stap = factor(c("Vertoningen", "Bereikte personen", "Landingspaginaweergaven"),
+                    levels = rev(c("Vertoningen", "Bereikte personen", "Landingspaginaweergaven"))),
+      aantal = c(x$Weergaven, x$Bereik, x$Resultaten),
+      kleur = c(KLEUR_LICHT, KLEUR_PRIMAIR, KLEUR_TERTIAIR)
+    )
+    plot_ly(
+      funnel,
+      x = ~aantal,
+      y = ~stap,
+      type = "bar",
+      orientation = "h",
+      text = ~format_number(aantal),
+      textposition = "outside",
+      cliponaxis = FALSE,
+      marker = list(color = funnel$kleur),
+      hovertemplate = "<b>%{y}</b><br>%{x:,.0f}<extra></extra>"
+    ) |>
+      basis_layout(x_titel = "Aantal", y_titel = "") |>
+      layout(margin = list(l = 155, r = 50, t = 12, b = 45), bargap = 0.42)
+  })
+
+  output$meta_details <- renderUI({
+    x <- meta_campagne()
+    detail <- function(label, waarde) {
+      div(class = "campaign-detail", span(class = "campaign-detail__label", label), span(class = "campaign-detail__value", waarde))
+    }
+    tagList(
+      detail("Advertentieset", x$`Naam advertentieset`),
+      detail("Resultaattype", x$Resultaattype),
+      detail("Frequentie", format(round(x$Frequentie, 2), nsmall = 2, decimal.mark = ",")),
+      detail("Toeschrijving", x$Toeschrijvingsinstelling),
+      detail("Rapportageperiode", paste(format(x$`Start rapportage`, "%d-%m-%Y"), "t/m", format(x$`Einde rapportage`, "%d-%m-%Y")))
+    )
+  })
+
+  output$meta_inzichten <- renderUI({
+    x <- meta_campagne()
+    bereik_rate <- x$Resultaten / x$Bereik * 100
+    impressie_rate <- x$Resultaten / x$Weergaven * 100
+    tagList(
+      div(class = "campaign-insight",
+          icon("arrow-pointer"),
+          div(strong(paste0(format_percentage(impressie_rate), " van de vertoningen leidde tot een landingspaginaweergave.")),
+              span(paste0("Dat is ", format_percentage(bereik_rate), " ten opzichte van het unieke bereik.")))),
+      div(class = "campaign-insight",
+          icon("repeat"),
+          div(strong(paste0("Gemiddelde frequentie: ", format(round(x$Frequentie, 2), nsmall = 2, decimal.mark = ","), " keer.")),
+              span("De doelgroep zag de advertentie gemiddeld minder dan twee keer; er is op basis van deze export geen duidelijk signaal van advertentiemoeheid."))),
+      div(class = "campaign-note",
+          icon("circle-info"),
+          "Meta rapporteert voor deze advertentieset 0 directe websiteaankopen, maar laat de totale aankoopwaarde leeg. Dat betekent dat Meta geen omzet aan de campagne heeft toegeschreven; het bewijst niet dat bezoekers nooit later of via een ander kanaal hebben gekocht. Zonder gemeten aankoopwaarde kan ROAS niet worden berekend.")
+    )
   })
   
   # POST PERFORMANCE
