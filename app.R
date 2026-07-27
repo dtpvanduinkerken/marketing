@@ -968,6 +968,52 @@ inzicht_samenvatting_ui <- function(inzichten) {
   )
 }
 
+# Compact signalenbord: groepeer eerst op urgentie. De gebruiker ziet alleen
+# categorie en titel; onderbouwing en actie zijn op verzoek uitklapbaar.
+inzicht_bord_ui <- function(inzichten) {
+  kolom <- function(type, titel) {
+    stijl <- inzicht_stijl[[type]]
+    items <- Filter(function(x) identical(x$type, type), inzichten)
+
+    div(
+      class = paste0("signal-board__column signal-board__column--", type),
+      div(
+        class = "signal-board__header",
+        div(class = "signal-board__header-title", icon(stijl$icoon), titel),
+        span(class = "signal-board__count", length(items))
+      ),
+      div(
+        class = "signal-board__items",
+        if (length(items) == 0) {
+          div(class = "signal-board__empty", "Geen signalen")
+        } else {
+          do.call(tagList, lapply(items, function(inzicht) {
+            tags$details(
+              class = "signal-board__item",
+              tags$summary(
+                span(class = "signal-board__category", inzicht$categorie),
+                span(class = "signal-board__title", inzicht$titel)
+              ),
+              div(
+                class = "signal-board__detail",
+                p(inzicht$tekst),
+                div(class = "signal-board__action", tags$strong("Actie: "), inzicht$actie)
+              )
+            )
+          }))
+        }
+      )
+    )
+  }
+
+  div(
+    class = "signal-board",
+    kolom("kritiek", "Kritiek"),
+    kolom("waarschuwing", "Aandacht"),
+    kolom("positief", "Positief")
+  )
+}
+
 # --------------------------------------------------
 # UI
 # --------------------------------------------------
@@ -1027,10 +1073,8 @@ ui <- dashboardPage(
               ),
               fluidRow(
                 box(width = 7, title = "Prioriteiten voor het MT", class = "home-priorities",
-                    inzicht_samenvatting_ui(inzichten_home),
-                    div(class = "home-insights",
-                      do.call(tagList, lapply(inzichten_home, inzicht_kaart_ui))
-                    )
+                    div(class = "home-box-subtitle", "Open een signaal voor de onderbouwing en voorgestelde actie"),
+                    inzicht_bord_ui(inzichten_home)
                 ),
                 box(width = 5, title = "Omzetontwikkeling", class = "home-trend",
                     div(class = "home-box-subtitle", "Maandelijkse omzet en richting van de laatste periode"),
