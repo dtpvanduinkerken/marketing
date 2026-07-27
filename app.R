@@ -1152,12 +1152,6 @@ ui <- dashboardPage(
                                    format_number(data$afspraken$totaal_afspraken), subtitel = "totaal geboekt"))
               ),
               fluidRow(
-                box(width = 12, title = "Samenvatting en vervolgstappen", class = "home-priorities",
-                    div(class = "home-box-subtitle", "Per onderdeel het belangrijkste beeld en wat het MT ermee moet doen"),
-                    mt_domeinoverzicht_ui(data, inzichten_home, website_data_beschikbaar)
-                )
-              ),
-              fluidRow(
                 box(width = 5, title = "Omzetontwikkeling", class = "home-trend",
                     div(class = "home-box-subtitle", "Maandelijkse omzet en richting van de laatste periode"),
                     plotlyOutput("omzet_per_maand", height = "340px")),
