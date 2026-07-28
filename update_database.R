@@ -104,6 +104,12 @@ update_csv <- function(
       stop("Kon CSV niet lezen (", bestand, "): ", e$message)
     }
   )
+
+  # De members-export bevat een geboortedatum. Behandel die kolom altijd
+  # als datum, ook wanneer de aanroeper geen datum_kolommen meegeeft.
+  if ("geboortedatum" %in% names(df)) {
+    datum_kolommen <- unique(c(datum_kolommen, "geboortedatum"))
+  }
   
   if (nrow(df) == 0) {
     stop("Bestand '", bestand, "' bevat geen records. Import gestopt om lege tabel te voorkomen.")
@@ -118,7 +124,13 @@ update_csv <- function(
   if (!is.null(datum_kolommen)) {
     for (kolom in datum_kolommen) {
       if (kolom %in% names(df)) {
-        omgezet <- as.Date(df[[kolom]], format = "%d-%m-%Y")
+        waarde <- trimws(as.character(df[[kolom]]))
+        waarde[waarde == ""] <- NA_character_
+        omgezet <- as.Date(rep(NA_character_, length(waarde)))
+        for (datum_formaat in c("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y")) {
+          nog_leeg <- is.na(omgezet) & !is.na(waarde)
+          omgezet[nog_leeg] <- as.Date(waarde[nog_leeg], format = datum_formaat)
+        }
         n_mislukt <- sum(is.na(omgezet) & !is.na(df[[kolom]]) & df[[kolom]] != "")
         if (n_mislukt > 0) {
           cat("⚠ Let op:", n_mislukt, "waarde(n) in kolom '", kolom,

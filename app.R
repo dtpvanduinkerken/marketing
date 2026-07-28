@@ -580,6 +580,62 @@ FROM raw.afspraken
     FROM raw.members
     GROUP BY status
   ")
+
+  # Leeftijd is optioneel voor oudere imports. Zodra de CSV-kolom
+  # 'geboortedatum' aanwezig is, worden alleen geldige datums gebruikt.
+  members_leeftijd_kpis <- data.frame(
+    gemiddelde_leeftijd = NA_real_, members_met_geboortedatum = 0
+  )
+  members_leeftijd <- data.frame(
+    leeftijdsgroep = c("Jonger dan 18", "18–24", "25–34", "35–44", "45–54", "55–64", "65+"),
+    aantal = rep(0, 7), stringsAsFactors = FALSE
+  )
+
+  if ("geboortedatum" %in% dbListFields(con, DBI::Id(schema = "raw", table = "members"))) {
+    leeftijd_basis_sql <- "
+      WITH geboortedata AS (
+        SELECT COALESCE(
+          TRY_CAST(geboortedatum AS DATE),
+          TRY_STRPTIME(CAST(geboortedatum AS VARCHAR), '%d-%m-%Y')::DATE,
+          TRY_STRPTIME(CAST(geboortedatum AS VARCHAR), '%d/%m/%Y')::DATE
+        ) AS geboortedatum
+        FROM raw.members
+      ), leeftijden AS (
+        SELECT DATE_DIFF('year', geboortedatum, CURRENT_DATE)
+          - CASE WHEN STRFTIME(CURRENT_DATE, '%m%d') < STRFTIME(geboortedatum, '%m%d')
+                 THEN 1 ELSE 0 END AS leeftijd
+        FROM geboortedata
+        WHERE geboortedatum BETWEEN DATE '1900-01-01' AND CURRENT_DATE
+      )
+    "
+
+    members_leeftijd_kpis <- dbGetQuery(con, paste0(leeftijd_basis_sql, "
+      SELECT ROUND(AVG(leeftijd), 1) AS gemiddelde_leeftijd,
+             COUNT(*) AS members_met_geboortedatum
+      FROM leeftijden
+      WHERE leeftijd BETWEEN 0 AND 120
+    "))
+
+    leeftijd_resultaat <- dbGetQuery(con, paste0(leeftijd_basis_sql, "
+      SELECT CASE
+               WHEN leeftijd < 18 THEN 'Jonger dan 18'
+               WHEN leeftijd < 25 THEN '18–24'
+               WHEN leeftijd < 35 THEN '25–34'
+               WHEN leeftijd < 45 THEN '35–44'
+               WHEN leeftijd < 55 THEN '45–54'
+               WHEN leeftijd < 65 THEN '55–64'
+               ELSE '65+'
+             END AS leeftijdsgroep,
+             COUNT(*) AS aantal
+      FROM leeftijden
+      WHERE leeftijd BETWEEN 0 AND 120
+      GROUP BY 1
+    "))
+    members_leeftijd <- members_leeftijd |>
+      left_join(leeftijd_resultaat, by = "leeftijdsgroep", suffix = c("", "_nieuw")) |>
+      mutate(aantal = coalesce(aantal_nieuw, aantal)) |>
+      select(leeftijdsgroep, aantal)
+  }
   
   # --------------------------------------------------
   # GOOGLE ANALYTICS DATA (met veilige fallback)
@@ -658,6 +714,8 @@ FROM raw.afspraken
     afspraken_kpis_detail = afspraken_kpis_detail,
     members_nieuw_7d = members_nieuw_7d,
     members_actief_slapend = members_actief_slapend,
+    members_leeftijd_kpis = members_leeftijd_kpis,
+    members_leeftijd = members_leeftijd,
     meta_advertenties = meta_advertenties,
     verenigingen = verenigingen
   )
@@ -1345,17 +1403,25 @@ ui <- dashboardPage(
       # MEMBERS
       tabItem(tabName = "members",
               fluidRow(
-                column(3, kpi_card("Totaal Members",
+                column(2, kpi_card("Totaal Members",
                                    format_number(data$members_kpis$totaal_members))),
-                column(3, kpi_card("Actieve members",
+                column(2, kpi_card("Actieve members",
                                    format_number(data$members_kpis$actieve_members_90d),
                                    subtitel = "afgelopen 90 dagen")),
-                column(3, kpi_card("Nieuwe members",
+                column(2, kpi_card("Nieuwe members",
                                    format_number(members_7d_trend$waarde),
                                    members_7d_trend$class, members_7d_trend$label,
                                    "afgelopen 7 dagen")),
-                column(3, kpi_card("Terugkerende klanten",
-                                   format_number(data$klantgedrag$terugkerende_klanten)))
+                column(2, kpi_card("Terugkerende klanten",
+                                   format_number(data$klantgedrag$terugkerende_klanten))),
+                column(2, kpi_card("Gem. leeftijd",
+                                   if (is.na(data$members_leeftijd_kpis$gemiddelde_leeftijd[1])) "–"
+                                   else paste0(format(data$members_leeftijd_kpis$gemiddelde_leeftijd[1],
+                                                      decimal.mark = ",", nsmall = 1), " jaar"),
+                                   subtitel = "op basis van geboortedatum")),
+                column(2, kpi_card("Geboortedatum bekend",
+                                   format_number(data$members_leeftijd_kpis$members_met_geboortedatum[1]),
+                                   subtitel = "geldige datums"))
               ),
               br(),
               fluidRow(
@@ -1365,8 +1431,10 @@ ui <- dashboardPage(
                     plotlyOutput("members_woonplaats", height = "380px"))
               ),
               fluidRow(
-                box(width = 12, title = "Actieve vs slapende members",
-                    plotlyOutput("members_actief_slapend_plot", height = "340px"))
+                box(width = 6, title = "Actieve vs slapende members",
+                    plotlyOutput("members_actief_slapend_plot", height = "340px")),
+                box(width = 6, title = "Leeftijdsverdeling",
+                    plotlyOutput("members_leeftijd_plot", height = "340px"))
               )
       ),
       
@@ -1765,6 +1833,25 @@ server <- function(input, output, session) {
     ) |>
       basis_layout(y_titel = "Aantal members") |>
       layout(bargap = 0.5)
+  })
+
+  output$members_leeftijd_plot <- renderPlotly({
+    plot_data <- data$members_leeftijd
+    if (sum(plot_data$aantal, na.rm = TRUE) == 0) return(maak_leeg_plot())
+
+    plot_ly(
+      data = plot_data,
+      x = ~leeftijdsgroep, y = ~aantal,
+      type = "bar",
+      text = ~format_number(aantal), textposition = "outside",
+      textfont = list(size = 12, color = "#374151"),
+      marker = list(color = KLEUR_PRIMAIR, opacity = 0.92,
+                    line = list(color = "rgba(0,0,0,0)")),
+      hovertemplate = "<b>%{x}</b><br>%{y:,.0f} members<extra></extra>"
+    ) |>
+      basis_layout(y_titel = "Aantal members") |>
+      layout(bargap = 0.35, xaxis = list(categoryorder = "array",
+                                         categoryarray = plot_data$leeftijdsgroep))
   })
   
   # NIEUWSBRIEVEN
