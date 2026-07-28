@@ -595,19 +595,22 @@ FROM raw.afspraken
   geboortedatum_waarden <- NULL
   members_velden <- dbListFields(con, DBI::Id(schema = "raw", table = "members"))
 
-  if ("geboortedatum" %in% members_velden) {
-    geboortedatum_waarden <- dbGetQuery(
-      con, "SELECT geboortedatum FROM raw.members"
-    )$geboortedatum
-  } else if (file.exists(file.path("data", "raw", "members.csv"))) {
+  if (file.exists(file.path("data", "raw", "members.csv"))) {
     members_csv <- read.csv2(
       file.path("data", "raw", "members.csv"),
       stringsAsFactors = FALSE, check.names = FALSE
     )
     if ("geboortedatum" %in% names(members_csv)) {
       geboortedatum_waarden <- members_csv$geboortedatum
-      message("Leeftijdsdata wordt uit data/raw/members.csv geladen; raw.members bevat de kolom nog niet.")
+      message("Leeftijdsdata wordt uit data/raw/members.csv geladen.")
     }
+  }
+
+  if (is.null(geboortedatum_waarden) && "geboortedatum" %in% members_velden) {
+    geboortedatum_waarden <- dbGetQuery(
+      con, "SELECT geboortedatum FROM raw.members"
+    )$geboortedatum
+    message("Leeftijdsdata wordt uit raw.members geladen.")
   }
 
   if (!is.null(geboortedatum_waarden)) {
