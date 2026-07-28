@@ -581,8 +581,9 @@ FROM raw.afspraken
     GROUP BY status
   ")
 
-  # Leeftijd is optioneel voor oudere imports. Zodra de CSV-kolom
-  # 'geboortedatum' aanwezig is, worden alleen geldige datums gebruikt.
+  # Leeftijd is optioneel voor oudere imports. De database is de primaire
+  # bron; wanneer die nog niet opnieuw is ingeladen, gebruiken we tijdelijk
+  # de actuele members-CSV zodat een toegevoegde geboortedatum direct werkt.
   members_leeftijd_kpis <- data.frame(
     gemiddelde_leeftijd = NA_real_, members_met_geboortedatum = 0
   )
@@ -591,50 +592,54 @@ FROM raw.afspraken
     aantal = rep(0, 7), stringsAsFactors = FALSE
   )
 
-  if ("geboortedatum" %in% dbListFields(con, DBI::Id(schema = "raw", table = "members"))) {
-    leeftijd_basis_sql <- "
-      WITH geboortedata AS (
-        SELECT COALESCE(
-          TRY_CAST(geboortedatum AS DATE),
-          TRY_STRPTIME(CAST(geboortedatum AS VARCHAR), '%d-%m-%Y')::DATE,
-          TRY_STRPTIME(CAST(geboortedatum AS VARCHAR), '%d/%m/%Y')::DATE
-        ) AS geboortedatum
-        FROM raw.members
-      ), leeftijden AS (
-        SELECT DATE_DIFF('year', geboortedatum, CURRENT_DATE)
-          - CASE WHEN STRFTIME(CURRENT_DATE, '%m%d') < STRFTIME(geboortedatum, '%m%d')
-                 THEN 1 ELSE 0 END AS leeftijd
-        FROM geboortedata
-        WHERE geboortedatum BETWEEN DATE '1900-01-01' AND CURRENT_DATE
+  geboortedatum_waarden <- NULL
+  members_velden <- dbListFields(con, DBI::Id(schema = "raw", table = "members"))
+
+  if ("geboortedatum" %in% members_velden) {
+    geboortedatum_waarden <- dbGetQuery(
+      con, "SELECT geboortedatum FROM raw.members"
+    )$geboortedatum
+  } else if (file.exists(file.path("data", "raw", "members.csv"))) {
+    members_csv <- read.csv2(
+      file.path("data", "raw", "members.csv"),
+      stringsAsFactors = FALSE, check.names = FALSE
+    )
+    if ("geboortedatum" %in% names(members_csv)) {
+      geboortedatum_waarden <- members_csv$geboortedatum
+      message("Leeftijdsdata wordt uit data/raw/members.csv geladen; raw.members bevat de kolom nog niet.")
+    }
+  }
+
+  if (!is.null(geboortedatum_waarden)) {
+    geboorte_tekst <- trimws(as.character(geboortedatum_waarden))
+    geboorte_tekst[geboorte_tekst == ""] <- NA_character_
+    geboortedata <- as.Date(rep(NA_character_, length(geboorte_tekst)))
+    for (datum_formaat in c("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y")) {
+      nog_leeg <- is.na(geboortedata) & !is.na(geboorte_tekst)
+      geboortedata[nog_leeg] <- as.Date(geboorte_tekst[nog_leeg], format = datum_formaat)
+    }
+
+    vandaag <- Sys.Date()
+    geldig <- !is.na(geboortedata) & geboortedata >= as.Date("1900-01-01") & geboortedata <= vandaag
+    geboortedata <- geboortedata[geldig]
+    leeftijden <- as.integer(format(vandaag, "%Y")) - as.integer(format(geboortedata, "%Y")) -
+      as.integer(format(vandaag, "%m%d") < format(geboortedata, "%m%d"))
+    leeftijden <- leeftijden[leeftijden >= 0 & leeftijden <= 120]
+
+    if (length(leeftijden) > 0) {
+      leeftijdsgroepen <- cut(
+        leeftijden,
+        breaks = c(-Inf, 17, 24, 34, 44, 54, 64, Inf),
+        labels = members_leeftijd$leeftijdsgroep,
+        right = TRUE
       )
-    "
-
-    members_leeftijd_kpis <- dbGetQuery(con, paste0(leeftijd_basis_sql, "
-      SELECT ROUND(AVG(leeftijd), 1) AS gemiddelde_leeftijd,
-             COUNT(*) AS members_met_geboortedatum
-      FROM leeftijden
-      WHERE leeftijd BETWEEN 0 AND 120
-    "))
-
-    leeftijd_resultaat <- dbGetQuery(con, paste0(leeftijd_basis_sql, "
-      SELECT CASE
-               WHEN leeftijd < 18 THEN 'Jonger dan 18'
-               WHEN leeftijd < 25 THEN '18–24'
-               WHEN leeftijd < 35 THEN '25–34'
-               WHEN leeftijd < 45 THEN '35–44'
-               WHEN leeftijd < 55 THEN '45–54'
-               WHEN leeftijd < 65 THEN '55–64'
-               ELSE '65+'
-             END AS leeftijdsgroep,
-             COUNT(*) AS aantal
-      FROM leeftijden
-      WHERE leeftijd BETWEEN 0 AND 120
-      GROUP BY 1
-    "))
-    members_leeftijd <- members_leeftijd |>
-      left_join(leeftijd_resultaat, by = "leeftijdsgroep", suffix = c("", "_nieuw")) |>
-      mutate(aantal = coalesce(aantal_nieuw, aantal)) |>
-      select(leeftijdsgroep, aantal)
+      aantallen <- table(leeftijdsgroepen)
+      members_leeftijd$aantal <- as.numeric(aantallen[members_leeftijd$leeftijdsgroep])
+      members_leeftijd_kpis <- data.frame(
+        gemiddelde_leeftijd = round(mean(leeftijden), 1),
+        members_met_geboortedatum = length(leeftijden)
+      )
+    }
   }
   
   # --------------------------------------------------
