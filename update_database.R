@@ -202,6 +202,11 @@ update_csv <- function(
   
   dbExecute(con, sprintf("DROP TABLE IF EXISTS %s.%s", schema, tabel))
   dbExecute(con, sprintf("ALTER TABLE %s.%s RENAME TO %s", schema, tmp_tabel, tabel))
+
+  # De SQL-bestanden schrijven naar deze vaste lagen. Maak de schema's
+  # expliciet aan zodat ook een nieuwe of tijdelijke database werkt.
+  dbExecute(con, "CREATE SCHEMA IF NOT EXISTS staging")
+  dbExecute(con, "CREATE SCHEMA IF NOT EXISTS mart")
   
   cat("\n✔ Tabel", paste0(schema, ".", tabel), "bijgewerkt\n\n")
   
