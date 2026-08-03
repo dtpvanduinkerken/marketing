@@ -99,11 +99,39 @@ update_csv <- function(
   }
   
   df <- tryCatch(
-    read.csv2(bestand, stringsAsFactors = FALSE),
+    # Eerst alles als tekst lezen. De gecontroleerde conversies hieronder
+    # zetten datums en bedragen om, terwijl identifiers zoals receipt_id
+    # hun voorloopnullen behouden.
+    read.csv2(bestand, stringsAsFactors = FALSE, colClasses = "character"),
     error = function(e) {
       stop("Kon CSV niet lezen (", bestand, "): ", e$message)
     }
   )
+
+  # Couponexports van 2Factors gebruiken Engelstalige kolomnamen met
+  # spaties. Normaliseer deze hier naar het vaste raw-contract waarop de
+  # marts en het dashboard bouwen. Zo werkt dezelfde pipeline ook wanneer
+  # een volgende export meerdere couponcodes bevat.
+  if (identical(tabel, "coupons")) {
+    coupon_kolommen <- c(
+      "Customer.number" = "customer_number",
+      "Coupon.Code" = "coupon_code",
+      "Date" = "datum",
+      "Receipt.id" = "receipt_id",
+      "Discount" = "discount",
+      "Turnover" = "omzet"
+    )
+    hernoemen <- intersect(names(coupon_kolommen), names(df))
+    names(df)[match(hernoemen, names(df))] <- unname(coupon_kolommen[hernoemen])
+
+    vereist <- unname(coupon_kolommen)
+    ontbrekend <- setdiff(vereist, names(df))
+    if (length(ontbrekend) > 0) {
+      stop("Couponexport mist verplichte kolommen: ", paste(ontbrekend, collapse = ", "))
+    }
+    df <- df[, vereist, drop = FALSE]
+    datum_kolommen <- unique(c(datum_kolommen, "datum"))
+  }
 
   # De members-export bevat een geboortedatum. Behandel die kolom altijd
   # als datum, ook wanneer de aanroeper geen datum_kolommen meegeeft.
@@ -145,7 +173,8 @@ update_csv <- function(
   
   # Automatisch numerieke kolommen herkennen (met leading-zero bescherming)
   for (kolom in names(df)) {
-    if (is.character(df[[kolom]]) && is_eigenlijk_numeriek(df[[kolom]])) {
+    is_identifier <- kolom %in% c("customer_number", "receipt_id")
+    if (!is_identifier && is.character(df[[kolom]]) && is_eigenlijk_numeriek(df[[kolom]])) {
       df[[kolom]] <- as.numeric(gsub(",", ".", df[[kolom]]))
     }
   }

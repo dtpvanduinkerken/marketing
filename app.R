@@ -905,31 +905,21 @@ genereer_inzichten <- function(data, omzet_trend, members_7d_trend,
     }
   }, error = function(e) NULL)
   
-  # 5. COUPONS: VERZILVERING --------------------------------------------
-  # Optelling over álle coupons en alle datums samen (raw.coupons bevat
-  # per coupon meerdere datumregels), dezelfde rekenwijze als de
-  # KPI-kaarten op de Coupons-pagina zelf.
+  # 5. COUPONS: TRANSACTIEKWALITEIT -------------------------------------
+  # De 2Factors-export bevat uitsluitend ingeleverde coupons. Daarom
+  # sturen we op gerealiseerde omzet, korting en retouren; een betrouwbaar
+  # inwisselpercentage vereist daarnaast verzend-/uitgiftedata.
   tryCatch({
     df <- data$coupon_detail
-    verzonden  <- sum(df$verzonden, na.rm = TRUE)
-    ingeleverd <- sum(df$ingeleverd, na.rm = TRUE)
-    openstaand <- sum(df$openstaand, na.rm = TRUE)
-    if (verzonden > 0) {
-      inlever_pct <- round(ingeleverd / verzonden * 100, 1)
-      open_pct    <- round(openstaand / verzonden * 100, 1)
-      if (inlever_pct < 15) {
-        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Coupons",
-                                      "Coupons worden nauwelijks verzilverd",
-                                      paste0("Over alle coupons samen wordt slechts ", format_percentage_precies(inlever_pct),
-                                             " van de verzonden coupons daadwerkelijk ingeleverd (", format_number(ingeleverd),
-                                             " van de ", format_number(verzonden), "); ", format_percentage_precies(open_pct), " staat nog open."),
-                                      "Herzie de voorwaarden (kortingshoogte, geldigheidsduur) of promoot lopende coupons opnieuw via de nieuwsbrief.")
-      } else if (open_pct >= 40) {
-        inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Coupons",
-                                      "Veel coupons staan nog open",
-                                      paste0(format_percentage(open_pct), " van de verzonden coupons is nog niet gebruikt."),
-                                      "Stuur een herinnering naar klanten met een openstaande coupon, zeker als de vervaldatum nadert.")
-      }
+    retouren <- sum(df$omzet < 0, na.rm = TRUE)
+    transacties <- nrow(df)
+    if (transacties > 0 && retouren > 0) {
+      retour_pct <- retouren / transacties * 100
+      inzichten <- voeg_inzicht_toe(inzichten, "waarschuwing", "Coupons",
+                                    "Coupontransacties met negatieve omzet",
+                                    paste0(format_number(retouren), " van de ", format_number(transacties),
+                                           " coupontransacties heeft negatieve omzet (", format_percentage_precies(retour_pct), ")."),
+                                    "Controleer of dit retouren of correcties zijn en sluit ze zo nodig uit bij campagne-evaluaties.")
     }
   }, error = function(e) NULL)
   
@@ -1229,7 +1219,7 @@ mt_domeinoverzicht_ui <- function(data, inzichten, website_data_beschikbaar) {
     regel("Memberdeals", "tags",
           paste0(format_euro(sum(data$pricing_performance$omzet, na.rm = TRUE)), " omzet uit memberdeals.")),
     regel("Coupons", "ticket",
-          paste0(format_number(sum(data$coupon_detail$ingeleverd, na.rm = TRUE)), " coupons ingeleverd.")),
+          paste0(format_number(nrow(data$coupon_detail)), " coupons ingeleverd.")),
     regel("Members", "users",
           paste0(format_number(data$members_kpis$totaal_members[1]), " members, waarvan ",
                  format_number(data$members_kpis$actieve_members_90d[1]), " actief in 90 dagen.")),
@@ -1374,37 +1364,42 @@ ui <- dashboardPage(
       tabItem(tabName = "coupons",
               h2("Coupons"),
               selectInput("coupon_select", "Selecteer coupon",
-                          choices = sort(unique(data$coupon_detail$coupon_code))),
+                          choices = c("Alle coupons", sort(unique(data$coupon_detail$coupon_code))),
+                          selected = "Alle coupons"),
               br(),
               fluidRow(
                 column(3, kpi_card("Omzet",      textOutput("coupon_omzet"))),
                 column(3, kpi_card("Ingeleverd", textOutput("coupon_ingeleverd"))),
-                column(3, kpi_card("Verzonden",  textOutput("coupon_verzonden"))),
-                column(3, kpi_card("Openstaand", textOutput("coupon_openstaand")))
+                column(3, kpi_card("Unieke klanten", textOutput("coupon_klanten"))),
+                column(3, kpi_card("Totale korting", textOutput("coupon_korting")))
               ),
               br(),
               fluidRow(
-                box(width = 6, title = "Gebruik per dag",
+                box(width = 6, title = "Ingeleverd per maand",
                     plotlyOutput("coupon_gebruik_plot", height = "340px")),
-                box(width = 6, title = "Omzet per dag",
+                box(width = 6, title = "Omzet per maand",
                     plotlyOutput("coupon_omzet_plot", height = "340px"))
               ),
               fluidRow(
                 box(width = 12, title = "Coupon Performance Analyse",
                     fluidRow(
-                      column(3, kpi_card("Inleverpercentage",
-                                         textOutput("coupon_inleverpercentage"),
-                                         subtitel = "Ingeleverd / Verzonden")),
-                      column(3, kpi_card("Omzet per coupon",
-                                         textOutput("coupon_omzet_per_coupon"),
+                      column(3, kpi_card("Gem. bonwaarde",
+                                         textOutput("coupon_gem_bonwaarde"),
                                          subtitel = "Omzet / Ingeleverd")),
                       column(3, kpi_card("Gem. korting",
                                          textOutput("coupon_gem_korting"),
-                                         subtitel = "Discount / Ingeleverd")),
-                      column(3, kpi_card("Openstaand %",
-                                         textOutput("coupon_openstaand_pct"),
-                                         subtitel = "Openstaand / Verzonden"))
+                                         subtitel = "Korting / Ingeleverd")),
+                      column(3, kpi_card("Korting / omzet",
+                                         textOutput("coupon_korting_pct"),
+                                         subtitel = "Totale korting / omzet")),
+                      column(3, kpi_card("Retourtransacties",
+                                         textOutput("coupon_retouren"),
+                                         subtitel = "Transacties met negatieve omzet"))
                     ))
+              ),
+              fluidRow(
+                box(width = 12, title = "Vergelijking per coupon",
+                    tableOutput("coupon_performance_tabel"))
               )
       ),
       
@@ -2007,38 +2002,57 @@ server <- function(input, output, session) {
   # COUPONS
   coupon_selected <- reactive({
     req(input$coupon_select)
-    data$coupon_detail |> dplyr::filter(coupon_code == input$coupon_select)
+    if (identical(input$coupon_select, "Alle coupons")) {
+      data$coupon_detail
+    } else {
+      data$coupon_detail |> dplyr::filter(coupon_code == input$coupon_select)
+    }
+  })
+
+  coupon_per_maand <- reactive({
+    coupon_selected() |>
+      mutate(maand = as.Date(format(as.Date(datum), "%Y-%m-01"))) |>
+      group_by(maand) |>
+      summarise(
+        ingeleverd = dplyr::n(),
+        omzet = sum(omzet, na.rm = TRUE),
+        .groups = "drop"
+      )
   })
   
   output$coupon_omzet      <- renderText(format_euro(sum(coupon_selected()$omzet, na.rm = TRUE)))
-  output$coupon_ingeleverd <- renderText(format_number(sum(coupon_selected()$ingeleverd, na.rm = TRUE)))
-  output$coupon_verzonden  <- renderText(format_number(sum(coupon_selected()$verzonden, na.rm = TRUE)))
-  output$coupon_openstaand <- renderText(format_number(sum(coupon_selected()$openstaand, na.rm = TRUE)))
+  output$coupon_ingeleverd <- renderText(format_number(nrow(coupon_selected())))
+  output$coupon_klanten    <- renderText(format_number(dplyr::n_distinct(coupon_selected()$customer_number)))
+  output$coupon_korting    <- renderText(format_euro(sum(abs(coupon_selected()$discount), na.rm = TRUE)))
   
   output$coupon_gebruik_plot <- renderPlotly({
+    df <- coupon_per_maand()
+    if (nrow(df) == 0) return(maak_leeg_plot())
     plot_ly(
-      data   = coupon_selected(),
-      x      = ~datum, y = ~ingeleverd,
+      data   = df,
+      x      = ~maand, y = ~ingeleverd,
       type   = "bar",
       marker = list(color = KLEUR_PRIMAIR, opacity = 0.90,
                     line = list(color = "rgba(0,0,0,0)")),
-      hovertemplate = "<b>%{x}</b><br>Gebruikt: %{y}<extra></extra>"
+      hovertemplate = "<b>%{x|%b %Y}</b><br>Ingeleverd: %{y}<extra></extra>"
     ) |>
-      basis_layout(y_titel = "Aantal gebruikt") |>
+      basis_layout(y_titel = "Aantal ingeleverd") |>
       layout(bargap = 0.35)
   })
   
   output$coupon_omzet_plot <- renderPlotly({
+    df <- coupon_per_maand()
+    if (nrow(df) == 0) return(maak_leeg_plot())
     plot_ly(
-      data   = coupon_selected(),
-      x      = ~datum, y = ~omzet,
+      data   = df,
+      x      = ~maand, y = ~omzet,
       type   = "scatter", mode = "lines+markers",
       line   = list(color = KLEUR_PRIMAIR, width = 2.5, shape = "spline"),
       marker = list(color = "#ffffff", size = 7,
                     line = list(color = KLEUR_PRIMAIR, width = 2)),
       fill          = "tozeroy",
       fillcolor     = "rgba(140,190,38,0.09)",
-      hovertemplate = "<b>%{x}</b><br>\u20ac%{y:,.0f}<extra></extra>"
+      hovertemplate = "<b>%{x|%b %Y}</b><br>Omzet: \u20ac%{y:,.0f}<extra></extra>"
     ) |>
       basis_layout(y_titel = "Omzet (\u20ac)")
   })
@@ -2048,27 +2062,20 @@ server <- function(input, output, session) {
     df <- coupon_selected()
     
     totaal_omzet      <- sum(df$omzet, na.rm = TRUE)
-    totaal_ingeleverd  <- sum(df$ingeleverd, na.rm = TRUE)
-    totaal_verzonden   <- sum(df$verzonden, na.rm = TRUE)
-    totaal_openstaand  <- sum(df$openstaand, na.rm = TRUE)
-    totaal_discount    <- if ("discount" %in% names(df)) sum(df$discount, na.rm = TRUE) else NA
+    totaal_ingeleverd  <- nrow(df)
+    totaal_discount    <- sum(abs(df$discount), na.rm = TRUE)
     
     list(
-      inleverpercentage = if (totaal_verzonden > 0) totaal_ingeleverd / totaal_verzonden * 100 else NA,
-      omzet_per_coupon  = if (totaal_ingeleverd > 0) totaal_omzet / totaal_ingeleverd else NA,
-      gem_korting       = if (!is.na(totaal_discount) && totaal_ingeleverd > 0) abs(totaal_discount) / totaal_ingeleverd else NA,
-      openstaand_pct    = if (totaal_verzonden > 0) totaal_openstaand / totaal_verzonden * 100 else NA
+      gem_bonwaarde = if (totaal_ingeleverd > 0) totaal_omzet / totaal_ingeleverd else NA,
+      gem_korting   = if (totaal_ingeleverd > 0) totaal_discount / totaal_ingeleverd else NA,
+      korting_pct   = if (totaal_omzet != 0) totaal_discount / totaal_omzet * 100 else NA,
+      retouren      = sum(df$omzet < 0, na.rm = TRUE)
     )
     
   })
   
-  output$coupon_inleverpercentage <- renderText({
-    waarde <- coupon_kpi_data()$inleverpercentage
-    if (is.na(waarde)) "n.v.t." else format_percentage(waarde)
-  })
-  
-  output$coupon_omzet_per_coupon <- renderText({
-    waarde <- coupon_kpi_data()$omzet_per_coupon
+  output$coupon_gem_bonwaarde <- renderText({
+    waarde <- coupon_kpi_data()$gem_bonwaarde
     if (is.na(waarde)) "n.v.t." else format_euro(waarde)
   })
   
@@ -2077,10 +2084,26 @@ server <- function(input, output, session) {
     if (is.na(waarde)) "n.v.t." else format_euro(waarde)
   })
   
-  output$coupon_openstaand_pct <- renderText({
-    waarde <- coupon_kpi_data()$openstaand_pct
+  output$coupon_korting_pct <- renderText({
+    waarde <- coupon_kpi_data()$korting_pct
     if (is.na(waarde)) "n.v.t." else format_percentage(waarde)
   })
+
+  output$coupon_retouren <- renderText(format_number(coupon_kpi_data()$retouren))
+
+  output$coupon_performance_tabel <- renderTable({
+    data$coupon_performance |>
+      transmute(
+        Coupon = coupon_code,
+        Ingeleverd = ingeleverd,
+        `Unieke klanten` = unieke_klanten,
+        Omzet = format_euro(omzet),
+        Korting = format_euro(korting),
+        `Gem. bonwaarde` = format_euro(gemiddelde_bonwaarde),
+        `Korting / omzet` = format_percentage(korting_omzet_pct),
+        Retouren = retourtransacties
+      )
+  }, striped = TRUE, hover = TRUE, bordered = FALSE, spacing = "s")
   
   # VERENIGINGEN
   verenigingen_filtered <- reactive({
