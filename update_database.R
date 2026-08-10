@@ -25,14 +25,14 @@ disconnect_database <- function(con) {
 
 # Voert alle .sql bestanden in een map uit, in alfabetische volgorde.
 # Stopt direct (met duidelijke melding) als een bestand een fout geeft.
-run_sql_folder <- function(con, map, label) {
+run_sql_folder <- function(con, map, label, patroon = "\\.sql$") {
   
   if (!dir.exists(map)) {
     cat("  (map", map, "bestaat niet, overgeslagen)\n")
     return(invisible(NULL))
   }
   
-  bestanden <- sort(list.files(map, pattern = "\\.sql$", full.names = TRUE))
+  bestanden <- sort(list.files(map, pattern = patroon, full.names = TRUE))
   
   if (length(bestanden) == 0) {
     cat("  (geen .sql bestanden gevonden in", map, ")\n")
@@ -87,7 +87,10 @@ update_csv <- function(
     schema = "raw",
     datum_kolommen = NULL,
     staging_map = "sql/staging",
-    mart_map = "sql/mart"
+    mart_map = "sql/mart",
+    staging_patroon = "\\.sql$",
+    mart_patroon = "\\.sql$",
+    controle_objecten = NULL
 ) {
   
   cat("\n==============================\n")
@@ -218,7 +221,7 @@ update_csv <- function(
   cat("\n==============================\n")
   cat("Staging vernieuwen\n")
   cat("==============================\n")
-  run_sql_folder(con, staging_map, "staging")
+  run_sql_folder(con, staging_map, "staging", staging_patroon)
   
   #
   # MART
@@ -226,7 +229,7 @@ update_csv <- function(
   cat("\n==============================\n")
   cat("Mart vernieuwen\n")
   cat("==============================\n")
-  run_sql_folder(con, mart_map, "mart")
+  run_sql_folder(con, mart_map, "mart", mart_patroon)
   
   #
   # Controle van mart-views
@@ -235,16 +238,18 @@ update_csv <- function(
   cat("Controle views\n")
   cat("==============================\n")
   
-  views <- dbGetQuery(con, "
-      SELECT view_name
-      FROM duckdb_views()
-      WHERE schema_name = 'mart'
-      ORDER BY view_name
-  ")
+  if (is.null(controle_objecten)) {
+    controle_objecten <- dbGetQuery(con, "
+        SELECT view_name
+        FROM duckdb_views()
+        WHERE schema_name = 'mart'
+        ORDER BY view_name
+    ")$view_name
+  }
   
   fouten <- character()
   
-  for (v in views$view_name) {
+  for (v in controle_objecten) {
     ok <- tryCatch({
       dbGetQuery(con, paste0("SELECT * FROM mart.", v, " LIMIT 1"))
       TRUE
@@ -255,7 +260,7 @@ update_csv <- function(
   }
   
   if (length(fouten) == 0) {
-    cat("\n✔ Alle mart-views werken.\n")
+    cat("\n✔ Alle geselecteerde mart-objecten werken.\n")
   } else {
     cat("\n⚠ Problemen gevonden:\n\n")
     cat(paste(fouten, collapse = "\n"), "\n")

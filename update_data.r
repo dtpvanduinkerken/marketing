@@ -1,7 +1,7 @@
 # ==================================================
 # UPDATE_DATA.R
 # Herlaadt de actuele 2Factors-couponexport en bouwt
-# daarna alle staging- en mart-tabellen opnieuw op.
+# daarna uitsluitend de afhankelijke couponmarts opnieuw op.
 # ==================================================
 
 source("update_database.R")
@@ -31,7 +31,13 @@ tryCatch(
       schema = "raw",
       datum_kolommen = "datum",
       staging_map = staging_map,
-      mart_map = mart_map
+      mart_map = mart_map,
+      mart_patroon = "^coupon_.*\\.sql$",
+      controle_objecten = c(
+        "coupon_kpis",
+        "coupon_maand",
+        "coupon_performance"
+      )
     )
   },
   finally = {
