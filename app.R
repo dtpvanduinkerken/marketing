@@ -345,6 +345,60 @@ veilige_ga_data <- function(expr) {
   })
 }
 
+laad_website_data <- function() {
+  website_kpis <- veilige_ga_data(ga_data(
+    propertyId = 314034198,
+    date_range = c("30daysAgo", "today"),
+    metrics = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
+  )) %||% leeg_website_kpis
+
+  website_dagelijks <- veilige_ga_data(ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "date", metrics = c("activeUsers", "sessions")
+  )) %||% leeg_website_dagelijks
+
+  website_paginas <- veilige_ga_data(ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "pagePath", metrics = "screenPageViews", limit = 20
+  )) %||% leeg_website_paginas
+
+  website_bronnen <- veilige_ga_data(ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "sessionSource", metrics = "sessions", limit = 20
+  )) %||% leeg_website_bronnen
+
+  website_devices <- veilige_ga_data(ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "deviceCategory", metrics = "activeUsers"
+  )) %||% leeg_website_devices
+
+  website_search_terms <- veilige_ga_data(ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "searchTerm", metrics = "eventCount", limit = 10
+  )) %||% leeg_website_search_terms
+
+  funnel_raw <- veilige_ga_data(ga_data(
+    propertyId = 314034198, date_range = c("30daysAgo", "today"),
+    dimensions = "eventName", metrics = "eventCount"
+  ))
+  website_checkout_funnel <- if (is.null(funnel_raw)) leeg_website_funnel else {
+    funnel_raw |>
+      dplyr::filter(eventName %in% c(
+        "page_view", "view_item", "add_to_cart", "begin_checkout", "purchase"
+      ))
+  }
+
+  list(
+    kpis = website_kpis,
+    dagelijks = website_dagelijks,
+    paginas = website_paginas,
+    bronnen = website_bronnen,
+    devices = website_devices,
+    search_terms = website_search_terms,
+    checkout_funnel = website_checkout_funnel
+  )
+}
+
 normaliseer_vereniging_code <- function(x) {
   x <- tolower(trimws(as.character(x)))
   x <- sub("^twv[_ -]*", "", x)
@@ -518,52 +572,15 @@ load_data <- function() {
   # GOOGLE ANALYTICS DATA (met veilige fallback)
   # --------------------------------------------------
   
-  website_kpis <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("30daysAgo", "today"),
-    metrics    = c("activeUsers", "sessions", "screenPageViews", "engagementRate")
-  )) %||% leeg_website_kpis
-  
-  website_dagelijks <- veilige_ga_data(ga_data(
-    propertyId = 314034198, date_range = c("30daysAgo", "today"),
-    dimensions = "date", metrics = c("activeUsers", "sessions")
-  )) %||% leeg_website_dagelijks
-  
-  website_paginas <- veilige_ga_data(ga_data(
-    propertyId = 314034198, date_range = c("30daysAgo", "today"),
-    dimensions = "pagePath", metrics = c("screenPageViews"), limit = 20
-  )) %||% leeg_website_paginas
-  
-  website_bronnen <- veilige_ga_data(ga_data(
-    propertyId = 314034198, date_range = c("30daysAgo", "today"),
-    dimensions = "sessionSource", metrics = c("sessions"), limit = 20
-  )) %||% leeg_website_bronnen
-  
-  website_devices <- veilige_ga_data(ga_data(
-    propertyId = 314034198, date_range = c("30daysAgo", "today"),
-    dimensions = "deviceCategory", metrics = c("activeUsers")
-  )) %||% leeg_website_devices
-  
-  website_search_terms <- veilige_ga_data(ga_data(
-    propertyId = 314034198,
-    date_range = c("30daysAgo", "today"),
-    dimensions = "searchTerm",
-    metrics = c("eventCount"),
-    limit = 10
-  )) %||% leeg_website_search_terms
-  
-  website_checkout_funnel_raw <- veilige_ga_data(ga_data(
-    propertyId = 314034198, date_range = c("30daysAgo", "today"),
-    dimensions = "eventName", metrics = c("eventCount")
-  ))
-  website_checkout_funnel <- if (!is.null(website_checkout_funnel_raw)) {
-    website_checkout_funnel_raw |>
-      dplyr::filter(eventName %in% c(
-        "page_view", "view_item", "add_to_cart", "begin_checkout", "purchase"
-      ))
-  } else {
-    leeg_website_funnel
-  }
+  # GA4 wordt pas na het openen van een Shiny-sessie opgehaald. Zo kan een
+  # trage externe API de verplichte Render-poortbinding nooit blokkeren.
+  website_kpis <- leeg_website_kpis
+  website_dagelijks <- leeg_website_dagelijks
+  website_paginas <- leeg_website_paginas
+  website_bronnen <- leeg_website_bronnen
+  website_devices <- leeg_website_devices
+  website_search_terms <- leeg_website_search_terms
+  website_checkout_funnel <- leeg_website_funnel
   
   list(
     pricing = pricing, klanten = klanten, marketing = marketing,
@@ -1474,11 +1491,10 @@ ui <- dashboardPage(
         uiOutput("ga4_status_banner"),
         
         fluidRow(
-          column(3, kpi_card("Gebruikers", format_number(data$website_kpis$activeUsers))),
-          column(3, kpi_card("Sessies", format_number(data$website_kpis$sessions))),
-          column(3, kpi_card("Pageviews", format_number(data$website_kpis$screenPageViews))),
-          column(3, kpi_card("Engagement",
-                             paste0(round(data$website_kpis$engagementRate * 100, 1), "%")))
+          column(3, kpi_card("Gebruikers", textOutput("website_gebruikers"))),
+          column(3, kpi_card("Sessies", textOutput("website_sessies"))),
+          column(3, kpi_card("Pageviews", textOutput("website_pageviews"))),
+          column(3, kpi_card("Engagement", textOutput("website_engagement")))
         ),
         
         br(),
@@ -1589,6 +1605,22 @@ ui <- dashboardPage(
 # --------------------------------------------------
 
 server <- function(input, output, session) {
+  website_live <- reactiveVal(list(
+    kpis = leeg_website_kpis,
+    dagelijks = leeg_website_dagelijks,
+    paginas = leeg_website_paginas,
+    bronnen = leeg_website_bronnen,
+    devices = leeg_website_devices,
+    search_terms = leeg_website_search_terms,
+    checkout_funnel = leeg_website_funnel
+  ))
+  ga4_opgehaald <- reactiveVal(FALSE)
+
+  observeEvent(TRUE, {
+    website_live(laad_website_data())
+    ga4_opgehaald(TRUE)
+    message("GA4-dashboarddata is na serverstart geladen.")
+  }, once = TRUE)
   
   # HOME
   output$omzet_woonplaats <- renderPlotly({
@@ -2266,7 +2298,7 @@ server <- function(input, output, session) {
   
   output$website_search_plot <- renderPlotly({
     
-    zoekdata <- data$website_search_terms |>
+    zoekdata <- website_live()$search_terms |>
       filter(
         !is.na(searchTerm),
         trimws(searchTerm) != "",
@@ -2296,7 +2328,7 @@ server <- function(input, output, session) {
   # Toont direct in het dashboard of GA4 live-data beschikbaar is, in
   # plaats van dat je dit alleen in de server-logs kunt zien.
   ga4_status_ui <- renderUI({
-    if (website_data_beschikbaar) {
+    if (website_data_beschikbaar && ga4_opgehaald()) {
       div(style = "padding:10px 15px;margin-bottom:15px;border-radius:6px;
                    background:#eaf5d8;color:#3d5c0f;border:1px solid #c5e07a;",
           icon("circle-check"), " GA4-data succesvol opgehaald.")
@@ -2309,10 +2341,17 @@ server <- function(input, output, session) {
     }
   })
   output$ga4_status_banner <- ga4_status_ui
+
+  output$website_gebruikers <- renderText(format_number(website_live()$kpis$activeUsers[1]))
+  output$website_sessies <- renderText(format_number(website_live()$kpis$sessions[1]))
+  output$website_pageviews <- renderText(format_number(website_live()$kpis$screenPageViews[1]))
+  output$website_engagement <- renderText({
+    paste0(round(website_live()$kpis$engagementRate[1] * 100, 1), "%")
+  })
   
   output$website_bezoekers_plot <- renderPlotly({
     
-    plot_data <- data$website_dagelijks |>
+    plot_data <- website_live()$dagelijks |>
       mutate(date = as.Date(date)) |>
       arrange(date)
     
@@ -2351,7 +2390,7 @@ server <- function(input, output, session) {
   
   output$website_devices_plot <- renderPlotly({
     maak_donut_plot(
-      data$website_devices,
+      website_live()$devices,
       "deviceCategory",
       "activeUsers",
       c(KLEUR_PRIMAIR, KLEUR_TERTIAIR, KLEUR_LICHT)
@@ -2367,7 +2406,7 @@ server <- function(input, output, session) {
     )
     
     funnel_data <- stappen |>
-      left_join(data$website_checkout_funnel, by = c("event" = "eventName")) |>
+      left_join(website_live()$checkout_funnel, by = c("event" = "eventName")) |>
       mutate(eventCount = ifelse(is.na(eventCount), 0, eventCount))
     
     kleuren <- c("#8cbe26", "#7ab221", "#6ca61c", "#5b9218", "#4d7e12")
@@ -2424,8 +2463,8 @@ server <- function(input, output, session) {
     )
   })
   
-  output$website_paginas_tabel <- renderTable({ data$website_paginas })
-  output$website_bronnen_tabel <- renderTable({ data$website_bronnen })
+  output$website_paginas_tabel <- renderTable({ website_live()$paginas })
+  output$website_bronnen_tabel <- renderTable({ website_live()$bronnen })
   
   # COHORTANALYSE
   output$members_groei_plot <- renderPlotly({
