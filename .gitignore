@@ -1,7 +1,20 @@
-# *.duckdb
+# Alleen de kleine, gepseudonimiseerde Render-snapshot hoort in de deploy.
+*.duckdb
+!render_snapshot.duckdb
+data/snapshots/
+
+# Lokale authenticatiebestanden en sleutels nooit publiceren.
+ga_token.rds
+ga_token_base64.txt
+secrets/
+
 data/raw/*
 !data/raw/Verenigingen.csv
 !data/raw/verenigingen_pricing.csv
 !data/raw/meta_advertenties.csv
 .Rproj.user
 .secrets
+.DS_Store
+.RData
+.Rhistory
+renv/.DS_Store

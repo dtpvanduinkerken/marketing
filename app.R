@@ -17,19 +17,6 @@ KLEUR_LICHT     <- "#c5e07a"
 
 `%||%` <- function(a, b) if (is.null(a)) b else a
 
-# Pad naar de database. shiny::runApp('/srv/shiny-server') zet de working
-# directory automatisch naar de app-map, dus een relatief pad is hier
-# voldoende en het meest robuust (geen afhankelijkheid van sys.frame()-
-# trucs die breken zodra het script niet via source() gestart wordt).
-conn <- dbConnect(duckdb::duckdb())
-tryCatch({
-  dbExecute(conn, "INSTALL icu")
-  dbExecute(conn, "LOAD icu")
-}, error = function(e) {
-  warning("Could not install/load ICU extension: ", e$message)
-})
-
-
 # --------------------------------------------------
 # GOOGLE ANALYTICS AUTHENTICATIE (SERVICE ACCOUNT)
 # --------------------------------------------------
@@ -124,36 +111,21 @@ if (nzchar(ga_service_account_pad)) {
 # DATABASE
 # --------------------------------------------------
 
-# DB_PAD: relatief pad naar het DuckDB-bestand in de app-map. Kan via de
-# environment variable DB_PAD overschreven worden (bv. op een server met
-# een ander deploy-pad), met "warehouse.duckdb" als standaardwaarde.
-# DB_PAD: pad naar het DuckDB-bestand. Als dit al ergens anders is
-# gedefinieerd (bv. in een global.R die Shiny automatisch vóór app.R
-# inleest), laten we die waarde ongemoeid. Alleen als DB_PAD nog
-# nergens bestaat, vallen we terug op de environment variable of een
-# relatief standaardpad.
+# De app leest uitsluitend de wekelijkse, gevalideerde Render-snapshot.
+# DB_PAD kan op Render nog worden overschreven, maar wijst standaard naar
+# het bestand dat door het lokale snapshotscript wordt gebouwd.
 if (!exists("DB_PAD", inherits = FALSE) || is.null(DB_PAD) || !nzchar(DB_PAD)) {
-  DB_PAD <- Sys.getenv("DB_PAD", unset = "bedrijf.duckdb")
+  DB_PAD <- Sys.getenv("DB_PAD", unset = "render_snapshot.duckdb")
 }
 if (!file.exists(DB_PAD)) {
   stop("Databasebestand niet gevonden op pad: '", DB_PAD,
        "'. Werkdirectory is: ", getwd(),
        ". Zet evt. de environment variable DB_PAD naar het juiste pad.")
 }
-message("Debug: DuckDB-bestand wordt geladen vanaf: ", normalizePath(DB_PAD))
+message("Render-snapshot wordt geladen vanaf: ", normalizePath(DB_PAD))
 
-con <- dbConnect(duckdb::duckdb(), DB_PAD)
+con <- dbConnect(duckdb::duckdb(), DB_PAD, read_only = TRUE)
 onStop(function() dbDisconnect(con, shutdown = TRUE))
-
-# Expliciet de icu-extensie laden (nodig voor sommige datum/locale-functies
-# in de mart-views). Wordt al tijdens de Docker build geïnstalleerd onder
-# dezelfde HOME als waarmee de app draait, zodat dit hier alleen het laden
-# is, zonder netwerktoegang nodig te hebben.
-tryCatch({
-  dbExecute(con, "LOAD icu")
-}, error = function(e) {
-  message("Waarschuwing: kon DuckDB-extensie 'icu' niet laden: ", conditionMessage(e))
-})
 
 # --------------------------------------------------
 # HELPER: OPMAAK
@@ -384,11 +356,11 @@ maak_verenigingen_dataset <- function(verenigingen, verenigingen_pricing) {
   names(verenigingen) <- gsub("\\.", " ", names(verenigingen))
   verenigingen <- verenigingen |>
     transmute(
-      vereniging_id = as.character(.data[["Vereniging ID"]]),
-      vereniging = trimws(as.character(.data[["Vereniging"]])),
-      sport = trimws(as.character(.data[["Sport"]])),
-      aantal_leden = suppressWarnings(as.numeric(gsub(",", ".", .data[["Aantal leden"]]))),
-      aantal_members = suppressWarnings(as.numeric(gsub(",", ".", .data[["Aantal members"]])))
+      vereniging_id = as.character(.data[["vereniging_id"]]),
+      vereniging = trimws(as.character(.data[["vereniging"]])),
+      sport = trimws(as.character(.data[["sport"]])),
+      aantal_leden = suppressWarnings(as.numeric(.data[["aantal_leden"]])),
+      aantal_members = suppressWarnings(as.numeric(.data[["aantal_members"]]))
     ) |>
     mutate(
       aantal_leden = ifelse(is.na(aantal_leden), 0, aantal_leden),
@@ -470,28 +442,8 @@ load_data <- function() {
   afspraken <- dbGetQuery(con, "SELECT * FROM mart.afspraken_kpis")
   woonplaats <- dbGetQuery(con,
                            "SELECT * FROM mart.omzet_per_woonplaats ORDER BY omzet DESC LIMIT 10")
-  # Bereken deze reeks rechtstreeks uit de staginglaag. Oudere databases
-  # bevatten een view die DATE_TRUNC direct op een VARCHAR-datum toepast;
-  # expliciet parsen houdt zowel bestaande als vernieuwde deployments werkend.
-  omzet_per_maand <- dbGetQuery(con, "
-    WITH pricing_met_datum AS (
-      SELECT
-        COALESCE(
-          TRY_CAST(datum AS DATE),
-          CAST(TRY_STRPTIME(datum, '%d-%m-%Y') AS DATE),
-          CAST(TRY_STRPTIME(datum, '%d/%m/%Y') AS DATE)
-        ) AS verkoopdatum,
-        omzet
-      FROM staging.personal_pricing
-    )
-    SELECT
-      DATE_TRUNC('month', verkoopdatum) AS maand,
-      ROUND(SUM(omzet), 2) AS omzet
-    FROM pricing_met_datum
-    WHERE verkoopdatum IS NOT NULL
-    GROUP BY 1
-    ORDER BY 1
-  ")
+  omzet_per_maand <- dbGetQuery(con,
+                                "SELECT * FROM mart.omzet_per_maand ORDER BY maand")
   pricing_performance <- dbGetQuery(con,
                                     "SELECT * FROM mart.pricing_performance ORDER BY omzet DESC")
   members_kpis <- dbGetQuery(con, "SELECT * FROM mart.members_kpis")
@@ -500,21 +452,15 @@ load_data <- function() {
                                    "SELECT woonplaats, klanten, omzet, omzet_per_klant
      FROM mart.omzet_per_woonplaats ORDER BY omzet DESC LIMIT 10")
   newsletter_campagnes <- dbGetQuery(con,
-                                     "SELECT * FROM staging.newsletters ORDER BY datum DESC")
+    "SELECT * FROM dashboard.newsletter_campagnes ORDER BY datum DESC")
   afspraken_per_dienst <- dbGetQuery(con,
-                                     "SELECT dienst, COUNT(*) AS totaal FROM raw.afspraken
-     GROUP BY dienst ORDER BY totaal DESC")
-  afspraken_kpis_detail <- dbGetQuery(con, "
-SELECT
-  COUNT(*) AS totaal_afspraken,
-  COUNT(DISTINCT dienst) AS aantal_diensten
-FROM raw.afspraken
-")
+    "SELECT * FROM dashboard.afspraken_per_dienst ORDER BY totaal DESC")
+  afspraken_kpis_detail <- dbGetQuery(con,
+    "SELECT * FROM dashboard.afspraken_kpis_detail")
   members_groei <- dbGetQuery(con,
                               "SELECT * FROM mart.members_groei ORDER BY maand")
   afspraken_over_tijd <- dbGetQuery(con,
-                                    "SELECT DATE_TRUNC('month', datum) AS maand, COUNT(*) AS totaal
-     FROM raw.afspraken GROUP BY DATE_TRUNC('month', datum) ORDER BY maand")
+    "SELECT * FROM dashboard.afspraken_over_tijd ORDER BY maand")
   social_media_kpis <- dbGetQuery(con, "SELECT * FROM mart.social_media_kpis")
   social_media_platform <- dbGetQuery(con, "SELECT * FROM mart.social_media_platform")
   social_media_volgergroei <- dbGetQuery(con,
@@ -532,138 +478,41 @@ FROM raw.afspraken
   coupon_detail <- dbGetQuery(con, "SELECT * FROM raw.coupons")
   verenigingen <- laad_verenigingen_data(con)
 
-  meta_bestand <- file.path("data", "raw", "meta_advertenties.csv")
-  if (!file.exists(meta_bestand)) {
-    stop("Meta-export niet gevonden op pad: '", meta_bestand, "'.")
-  }
-  meta_advertenties <- read.csv(
-    meta_bestand,
-    stringsAsFactors = FALSE,
-    check.names = FALSE,
-    encoding = "UTF-8"
-  )
-  namen_meta <- c(
-    "Campagnenaam", "Naam advertentieset", "Weergavestatus", "Bereik",
-    "Weergaven", "Frequentie", "Resultaattype", "Resultaten",
-    "Besteed bedrag (EUR)", "Kosten per resultaat", "Begint op",
-    "Eindigt op", "Start rapportage", "Einde rapportage"
-  )
-  ontbrekend_meta <- setdiff(namen_meta, names(meta_advertenties))
-  if (length(ontbrekend_meta) > 0) {
-    stop("Meta-export mist kolommen: ", paste(ontbrekend_meta, collapse = ", "))
-  }
-  meta_advertenties <- meta_advertenties |>
-    mutate(
-      Bereik = as.numeric(Bereik),
-      Weergaven = as.numeric(Weergaven),
-      Frequentie = as.numeric(Frequentie),
-      Resultaten = as.numeric(Resultaten),
-      `Besteed bedrag (EUR)` = as.numeric(`Besteed bedrag (EUR)`),
-      `Kosten per resultaat` = as.numeric(`Kosten per resultaat`),
-      `Begint op` = as.Date(`Begint op`),
-      `Eindigt op` = as.Date(`Eindigt op`),
-      `Start rapportage` = as.Date(`Start rapportage`),
-      `Einde rapportage` = as.Date(`Einde rapportage`)
-    )
-
-  meta_numerieke_kolommen <- c(
-    "Aankopen", "Kosten per aankoop", "Conversiewaarde aankopen",
-    "Conversiewaarde directe aankopen op website", "Aankopen op website",
-    "Directe aankopen op website", "Conversiewaarde door winkels ondersteunde aankopen",
-    "Door winkels ondersteunde aankopen",
-    "ROAS (rendement op advertentie-uitgaven) voor aankoop",
-    "In-app-aankopen", "Offline aankopen", "Aankopen op Meta",
-    "Conversiewaarde offline aankopen", "Conversiewaarde aankopen in mobiele app",
-    "Conversiewaarde aankopen op Meta", "ROAS voor aankoop voor website",
-    "ROAS voor aankoop in de app"
-  )
-  for (kolom in intersect(meta_numerieke_kolommen, names(meta_advertenties))) {
-    meta_advertenties[[kolom]] <- suppressWarnings(as.numeric(meta_advertenties[[kolom]]))
-  }
-  
-  members_nieuw_7d <- dbGetQuery(con, "
+  meta_advertenties <- dbGetQuery(con, '
     SELECT
-      SUM(CASE WHEN aanmelddatum > CURRENT_DATE - INTERVAL 7 DAY
-                AND aanmelddatum <= CURRENT_DATE THEN 1 ELSE 0 END) AS afgelopen_7d,
-      SUM(CASE WHEN aanmelddatum > CURRENT_DATE - INTERVAL 14 DAY
-                AND aanmelddatum <= CURRENT_DATE - INTERVAL 7 DAY THEN 1 ELSE 0 END) AS vorige_7d
-    FROM raw.members
-  ")
-  
-  members_actief_slapend <- dbGetQuery(con, "
-    SELECT
-      CASE WHEN laatste_aankoop IS NULL THEN 'Slapend'
-           WHEN laatste_aankoop < CURRENT_DATE - INTERVAL 90 DAY THEN 'Slapend'
-           ELSE 'Actief'
-      END AS status,
-      COUNT(*) AS aantal
-    FROM raw.members
-    GROUP BY status
-  ")
+      campagnenaam AS "Campagnenaam",
+      advertentieset AS "Naam advertentieset",
+      weergavestatus AS "Weergavestatus",
+      bereik AS "Bereik",
+      weergaven AS "Weergaven",
+      frequentie AS "Frequentie",
+      toeschrijvingsinstelling AS "Toeschrijvingsinstelling",
+      resultaattype AS "Resultaattype",
+      resultaten AS "Resultaten",
+      besteed_bedrag AS "Besteed bedrag (EUR)",
+      kosten_per_resultaat AS "Kosten per resultaat",
+      begint_op AS "Begint op",
+      eindigt_op AS "Eindigt op",
+      aankopen AS "Aankopen",
+      kosten_per_aankoop AS "Kosten per aankoop",
+      conversiewaarde_aankopen AS "Conversiewaarde aankopen",
+      aankopen_website AS "Aankopen op website",
+      directe_aankopen_website AS "Directe aankopen op website",
+      roas AS "ROAS (rendement op advertentie-uitgaven) voor aankoop",
+      start_rapportage AS "Start rapportage",
+      einde_rapportage AS "Einde rapportage"
+    FROM dashboard.meta_advertenties
+    ORDER BY "Einde rapportage" DESC
+  ')
 
-  # Leeftijd is optioneel voor oudere imports. De database is de primaire
-  # bron; wanneer die nog niet opnieuw is ingeladen, gebruiken we tijdelijk
-  # de actuele members-CSV zodat een toegevoegde geboortedatum direct werkt.
-  members_leeftijd_kpis <- data.frame(
-    gemiddelde_leeftijd = NA_real_, members_met_geboortedatum = 0
-  )
-  members_leeftijd <- data.frame(
-    leeftijdsgroep = c("Jonger dan 18", "18–24", "25–34", "35–44", "45–54", "55–64", "65+"),
-    aantal = rep(0, 7), stringsAsFactors = FALSE
-  )
-
-  geboortedatum_waarden <- NULL
-  members_velden <- dbListFields(con, DBI::Id(schema = "raw", table = "members"))
-
-  if (file.exists(file.path("data", "raw", "members.csv"))) {
-    members_csv <- read.csv2(
-      file.path("data", "raw", "members.csv"),
-      stringsAsFactors = FALSE, check.names = FALSE
-    )
-    if ("geboortedatum" %in% names(members_csv)) {
-      geboortedatum_waarden <- members_csv$geboortedatum
-      message("Leeftijdsdata wordt uit data/raw/members.csv geladen.")
-    }
-  }
-
-  if (is.null(geboortedatum_waarden) && "geboortedatum" %in% members_velden) {
-    geboortedatum_waarden <- dbGetQuery(
-      con, "SELECT geboortedatum FROM raw.members"
-    )$geboortedatum
-    message("Leeftijdsdata wordt uit raw.members geladen.")
-  }
-
-  if (!is.null(geboortedatum_waarden)) {
-    geboorte_tekst <- trimws(as.character(geboortedatum_waarden))
-    geboorte_tekst[geboorte_tekst == ""] <- NA_character_
-    geboortedata <- as.Date(rep(NA_character_, length(geboorte_tekst)))
-    for (datum_formaat in c("%d-%m-%Y", "%Y-%m-%d", "%d/%m/%Y")) {
-      nog_leeg <- is.na(geboortedata) & !is.na(geboorte_tekst)
-      geboortedata[nog_leeg] <- as.Date(geboorte_tekst[nog_leeg], format = datum_formaat)
-    }
-
-    vandaag <- Sys.Date()
-    geldig <- !is.na(geboortedata) & geboortedata >= as.Date("1900-01-01") & geboortedata <= vandaag
-    geboortedata <- geboortedata[geldig]
-    leeftijden <- as.integer(format(vandaag, "%Y")) - as.integer(format(geboortedata, "%Y")) -
-      as.integer(format(vandaag, "%m%d") < format(geboortedata, "%m%d"))
-    leeftijden <- leeftijden[leeftijden >= 0 & leeftijden <= 120]
-
-    if (length(leeftijden) > 0) {
-      leeftijdsgroepen <- cut(
-        leeftijden,
-        breaks = c(-Inf, 17, 24, 34, 44, 54, 64, Inf),
-        labels = members_leeftijd$leeftijdsgroep,
-        right = TRUE
-      )
-      aantallen <- table(leeftijdsgroepen)
-      members_leeftijd$aantal <- as.numeric(aantallen[members_leeftijd$leeftijdsgroep])
-      members_leeftijd_kpis <- data.frame(
-        gemiddelde_leeftijd = round(mean(leeftijden), 1),
-        members_met_geboortedatum = length(leeftijden)
-      )
-    }
-  }
+  members_nieuw_7d <- dbGetQuery(con,
+    "SELECT * FROM dashboard.members_nieuw_7d")
+  members_actief_slapend <- dbGetQuery(con,
+    "SELECT * FROM dashboard.members_actief_slapend")
+  members_leeftijd_kpis <- dbGetQuery(con,
+    "SELECT * FROM dashboard.members_leeftijd_kpis")
+  members_leeftijd <- dbGetQuery(con,
+    "SELECT * FROM dashboard.members_leeftijd")
   
   # --------------------------------------------------
   # GOOGLE ANALYTICS DATA (met veilige fallback)
@@ -898,8 +747,8 @@ genereer_inzichten <- function(data, omzet_trend, members_7d_trend,
   }, error = function(e) NULL)
   
   # 4. MEMBERS: ACTIEF VS SLAPEND -----------------------------------------
-  # Let op: dit gaat over het totale ledenbestand in raw.members (alle
-  # ooit aangemelde members), niet over de "unieke klanten" uit de
+  # Let op: dit gaat over het totale ledenbestand dat bij het maken van de
+  # snapshot is geaggregeerd, niet over de "unieke klanten" uit de
   # klantenkaart bovenaan de pagina — dat is een kleinere, andere groep
   # (mensen met minimaal 1 transactie). Vandaar dat de aantallen sterk
   # kunnen verschillen; dit is geen rekenfout.

@@ -1,0 +1,23 @@
+.git
+.gitignore
+.Rproj.user
+.RData
+.Rhistory
+.DS_Store
+**/.DS_Store
+
+# Lokale databases, exports en back-ups. Alleen de veilige snapshot gaat mee.
+bedrijf.duckdb
+bedrijf.duckdb.*
+data/raw
+data/snapshots
+
+# Authenticatiebestanden worden op Render als Secret File gemount.
+ga_token.rds
+ga_token_base64.txt
+secrets
+.secrets
+
+# Lokale renv-library is niet bruikbaar in de Linux-container.
+renv/library
+renv/staging

@@ -28,24 +28,12 @@ RUN R -e "install.packages(c( \
     'base64enc' \
     ), repos='https://packagemanager.posit.co/cran/__linux__/jammy/latest')"
 
-# Expliciete, vaste HOME zetten voor zowel build als runtime. DuckDB slaat
-# extensies standaard op in $HOME/.duckdb/extensions/... — als HOME tijdens
-# runtime verschilt van tijdens de build (wat op sommige platforms gebeurt),
-# vindt DuckDB de vooraf geïnstalleerde extensie niet terug en proberen
-# queries 'm opnieuw te downloaden, wat zonder netwerktoegang faalt.
+# Expliciete, vaste HOME zetten voor zowel build als runtime.
 ENV HOME=/root
 RUN mkdir -p ${HOME}
 
-# DuckDB-extensie 'icu' (nodig voor datum/locale-functies in de mart-views)
-# vooraf installeren tijdens de build, zodat tijdens runtime geen netwerk-
-# toegang nodig is om 'm te downloaden.
-RUN R -e "con <- DBI::dbConnect(duckdb::duckdb()); \
-    DBI::dbExecute(con, 'INSTALL icu'); \
-    DBI::dbExecute(con, 'LOAD icu'); \
-    DBI::dbDisconnect(con, shutdown = TRUE)"
-
 # App-bestanden kopiëren
-# Verwacht structuur: app.R, bedrijf.duckdb, www/styles.css (indien gebruikt)
+# Verwacht structuur: app.R, render_snapshot.duckdb en www/styles.css.
 COPY . /srv/shiny-server/
 
 # Eigenaarschap zetten zodat de shiny-server user erbij kan
