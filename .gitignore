@@ -2,6 +2,7 @@
 *.duckdb
 !render_snapshot.duckdb
 data/snapshots/
+data/archive/
 
 # Lokale authenticatiebestanden en sleutels nooit publiceren.
 ga_token.rds
