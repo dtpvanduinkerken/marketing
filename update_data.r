@@ -5,8 +5,10 @@
 # ==================================================
 
 source("update_database.R")
+source("update_render_snapshot.R")
 
 database_pad <- Sys.getenv("DASHBOARD_DB_PATH", unset = "bedrijf.duckdb")
+snapshot_pad <- Sys.getenv("DASHBOARD_SNAPSHOT_PATH", unset = "render_snapshot.duckdb")
 lege_sql_map <- file.path(tempdir(), "geen_sql_bestanden")
 
 # app.R maakt in een interactieve RStudio-sessie een globale verbinding
@@ -105,7 +107,14 @@ tryCatch(
 
     DBI::dbCommit(con)
     transactie_actief <- FALSE
-    cat("\n✔ Members, personal pricing en afspraken zijn bijgewerkt.\n")
+    disconnect_database(con)
+
+    update_render_snapshot(
+      bron_pad = database_pad,
+      snapshot_pad = snapshot_pad
+    )
+
+    cat("\n✔ Members, personal pricing, afspraken en het dashboard-snapshot zijn bijgewerkt.\n")
   },
   error = function(e) {
     if (transactie_actief && DBI::dbIsValid(con)) {
