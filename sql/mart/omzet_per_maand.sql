@@ -4,8 +4,8 @@ WITH pricing_met_datum AS (
   SELECT
     COALESCE(
       TRY_CAST(datum AS DATE),
-      CAST(TRY_STRPTIME(datum, '%d-%m-%Y') AS DATE),
-      CAST(TRY_STRPTIME(datum, '%d/%m/%Y') AS DATE)
+      CAST(TRY_STRPTIME(CAST(datum AS VARCHAR), '%d-%m-%Y') AS DATE),
+      CAST(TRY_STRPTIME(CAST(datum AS VARCHAR), '%d/%m/%Y') AS DATE)
     ) AS verkoopdatum,
     omzet,
     discount

@@ -7,11 +7,7 @@ SELECT
     WHEN laatste_aankoop IS NULL
       THEN 'Nooit actief'
 
-    WHEN DATE_DIFF(
-      'day',
-      laatste_aankoop,
-      CURRENT_DATE
-    ) <= 365
+    WHEN today() - laatste_aankoop <= 365
       THEN 'Actief'
 
     ELSE 'Slapend'

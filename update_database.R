@@ -162,6 +162,16 @@ update_csv <- function(
           nog_leeg <- is.na(omgezet) & !is.na(waarde)
           omgezet[nog_leeg] <- as.Date(waarde[nog_leeg], format = datum_formaat)
         }
+
+        # Excel kan datums als serienummer exporteren (bijv. 46207).
+        # Zet alleen nog niet herkende, zuiver numerieke waarden om met
+        # de Excel-origin; gewone klant- en bonnummers komen hier niet
+        # terecht omdat alleen expliciete datumkolommen worden verwerkt.
+        excel_serial <- is.na(omgezet) & !is.na(waarde) & grepl("^[0-9]{4,5}$", waarde)
+        omgezet[excel_serial] <- as.Date(
+          as.numeric(waarde[excel_serial]),
+          origin = "1899-12-30"
+        )
         n_mislukt <- sum(is.na(omgezet) & !is.na(df[[kolom]]) & df[[kolom]] != "")
         if (n_mislukt > 0) {
           cat("⚠ Let op:", n_mislukt, "waarde(n) in kolom '", kolom,
@@ -176,7 +186,7 @@ update_csv <- function(
   
   # Automatisch numerieke kolommen herkennen (met leading-zero bescherming)
   for (kolom in names(df)) {
-    is_identifier <- kolom %in% c("customer_number", "receipt_id")
+    is_identifier <- kolom %in% c("customer_number", "receipt_id", "klantnummer")
     if (!is_identifier && is.character(df[[kolom]]) && is_eigenlijk_numeriek(df[[kolom]])) {
       df[[kolom]] <- as.numeric(gsub(",", ".", df[[kolom]]))
     }

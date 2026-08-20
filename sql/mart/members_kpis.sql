@@ -14,7 +14,7 @@ SELECT
 
     COUNT(
         CASE
-            WHEN laatste_aankoop >= CURRENT_DATE - INTERVAL 90 DAY
+            WHEN laatste_aankoop >= today() - 90
             THEN 1
         END
     ) AS actieve_members_90d,
