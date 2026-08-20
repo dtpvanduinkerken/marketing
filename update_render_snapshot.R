@@ -47,7 +47,13 @@ update_render_snapshot <- function(
         "members_kpis",
         "omzet_per_maand",
         "omzet_per_woonplaats",
-        "pricing_performance"
+        "pricing_performance",
+        "social_media_kpis",
+        "social_media_platform",
+        "social_media_volgergroei",
+        "social_media_volgers",
+        "post_type_performance",
+        "post_performance"
       )
       for (tabel in mart_tabellen) {
         schrijf_tabel(

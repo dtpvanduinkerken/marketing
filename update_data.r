@@ -1,6 +1,6 @@
 # ==================================================
 # UPDATE_DATA.R
-# Importeert members, personal_pricing en afspraken
+# Importeert members, personal_pricing, afspraken en social media
 # en vernieuwt alleen de daarvan afhankelijke marts.
 # ==================================================
 
@@ -65,6 +65,18 @@ tryCatch(
       datum_kolommen = "datum"
     )
 
+    import_raw(
+      bestand = "social_media.csv",
+      tabel = "social_media",
+      datum_kolommen = "datum"
+    )
+
+    import_raw(
+      bestand = "social_media_volgers.csv",
+      tabel = "social_media_volgers",
+      datum_kolommen = "datum"
+    )
+
     cat("\n==============================\n")
     cat("Afhankelijke marts vernieuwen\n")
     cat("==============================\n")
@@ -76,6 +88,12 @@ tryCatch(
       "personal_pricing",
       "^(pricing_performance|omzet_per_maand)\\.sql$"
     )
+    run_sql_folder(
+      con,
+      "sql/mart",
+      "social_media",
+      "^(social_media_.*|post_.*)\\.sql$"
+    )
 
     controles <- c(
       "mart.members_activiteit",
@@ -84,7 +102,13 @@ tryCatch(
       "mart.members_woonplaats",
       "mart.pricing_performance",
       "mart.omzet_per_maand",
-      "mart.afspraken_kpis"
+      "mart.afspraken_kpis",
+      "mart.social_media_kpis",
+      "mart.social_media_platform",
+      "mart.social_media_volgergroei",
+      "mart.social_media_volgers",
+      "mart.post_type_performance",
+      "mart.post_performance"
     )
 
     for (object in controles) {
@@ -97,6 +121,10 @@ tryCatch(
       SELECT 'personal_pricing', COUNT(*) FROM raw.personal_pricing
       UNION ALL
       SELECT 'afspraken', COUNT(*) FROM raw.afspraken
+      UNION ALL
+      SELECT 'social_media', COUNT(*) FROM raw.social_media
+      UNION ALL
+      SELECT 'social_media_volgers', COUNT(*) FROM raw.social_media_volgers
       ORDER BY bron
     ")
 
@@ -114,7 +142,7 @@ tryCatch(
       snapshot_pad = snapshot_pad
     )
 
-    cat("\n✔ Members, personal pricing, afspraken en het dashboard-snapshot zijn bijgewerkt.\n")
+    cat("\n✔ Members, personal pricing, afspraken, social media en het dashboard-snapshot zijn bijgewerkt.\n")
   },
   error = function(e) {
     if (transactie_actief && DBI::dbIsValid(con)) {
