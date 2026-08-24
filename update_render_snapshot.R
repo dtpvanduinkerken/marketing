@@ -45,6 +45,7 @@ update_render_snapshot <- function(
         "kpi_personal_pricing",
         "members_groei",
         "members_kpis",
+        "newsletter_kpis",
         "omzet_per_maand",
         "omzet_per_woonplaats",
         "pricing_performance",
@@ -62,6 +63,12 @@ update_render_snapshot <- function(
           dbGetQuery(bron, paste0("SELECT * FROM mart.", tabel))
         )
       }
+
+      schrijf_tabel(
+        "dashboard",
+        "newsletter_campagnes",
+        dbGetQuery(bron, "SELECT * FROM staging.newsletters ORDER BY datum DESC")
+      )
 
       schrijf_tabel(
         "dashboard",

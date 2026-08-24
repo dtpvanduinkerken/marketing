@@ -1,6 +1,6 @@
 # ==================================================
 # UPDATE_DATA.R
-# Importeert members, personal_pricing, afspraken en social media
+# Importeert members, social media en nieuwsbrieven
 # en vernieuwt alleen de daarvan afhankelijke marts.
 # ==================================================
 
@@ -54,20 +54,14 @@ tryCatch(
     )
 
     import_raw(
-      bestand = "personal_pricing.csv",
-      tabel = "personal_pricing",
-      datum_kolommen = "datum"
-    )
-
-    import_raw(
-      bestand = "afspraken.csv",
-      tabel = "afspraken",
-      datum_kolommen = "datum"
-    )
-
-    import_raw(
       bestand = "social_media.csv",
       tabel = "social_media",
+      datum_kolommen = "datum"
+    )
+
+    import_raw(
+      bestand = "nieuwsbrieven_data.csv",
+      tabel = "newsletters",
       datum_kolommen = "datum"
     )
 
@@ -85,30 +79,24 @@ tryCatch(
     run_sql_folder(
       con,
       "sql/mart",
-      "personal_pricing",
-      "^(pricing_performance|omzet_per_maand)\\.sql$"
-    )
-    run_sql_folder(
-      con,
-      "sql/mart",
       "social_media",
       "^(social_media_.*|post_.*)\\.sql$"
     )
+    run_sql_folder(con, "sql/mart", "newsletters", "^newsletters\\.sql$")
 
     controles <- c(
       "mart.members_activiteit",
       "mart.members_groei",
       "mart.members_kpis",
       "mart.members_woonplaats",
-      "mart.pricing_performance",
-      "mart.omzet_per_maand",
-      "mart.afspraken_kpis",
       "mart.social_media_kpis",
       "mart.social_media_platform",
       "mart.social_media_volgergroei",
       "mart.social_media_volgers",
       "mart.post_type_performance",
-      "mart.post_performance"
+      "mart.post_performance",
+      "mart.newsletter_kpis",
+      "staging.newsletters"
     )
 
     for (object in controles) {
@@ -118,13 +106,11 @@ tryCatch(
     aantallen <- dbGetQuery(con, "
       SELECT 'members' AS bron, COUNT(*) AS records FROM raw.members
       UNION ALL
-      SELECT 'personal_pricing', COUNT(*) FROM raw.personal_pricing
-      UNION ALL
-      SELECT 'afspraken', COUNT(*) FROM raw.afspraken
-      UNION ALL
       SELECT 'social_media', COUNT(*) FROM raw.social_media
       UNION ALL
       SELECT 'social_media_volgers', COUNT(*) FROM raw.social_media_volgers
+      UNION ALL
+      SELECT 'newsletters', COUNT(*) FROM raw.newsletters
       ORDER BY bron
     ")
 
@@ -142,7 +128,7 @@ tryCatch(
       snapshot_pad = snapshot_pad
     )
 
-    cat("\n✔ Members, personal pricing, afspraken, social media en het dashboard-snapshot zijn bijgewerkt.\n")
+    cat("\n✔ Members, social media, nieuwsbrieven en het dashboard-snapshot zijn bijgewerkt.\n")
   },
   error = function(e) {
     if (transactie_actief && DBI::dbIsValid(con)) {

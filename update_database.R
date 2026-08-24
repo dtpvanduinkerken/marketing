@@ -142,14 +142,21 @@ update_csv <- function(
     datum_kolommen <- unique(c(datum_kolommen, "geboortedatum"))
   }
   
+  # Lege Excel-kolommen verwijderen (zoals "X", "X.1", "X.2", ...)
+  df <- df[, !grepl("^X(\\.[0-9]+)?$", names(df)), drop = FALSE]
+
+  # Excel- en CSV-exports bevatten soms honderden volledig lege opmaakregels.
+  # Verwijder uitsluitend regels waarop alle relevante velden leeg zijn.
+  volledig_leeg <- apply(df, 1, function(regel) {
+    all(is.na(regel) | trimws(as.character(regel)) == "")
+  })
+  df <- df[!volledig_leeg, , drop = FALSE]
+
   if (nrow(df) == 0) {
     stop("Bestand '", bestand, "' bevat geen records. Import gestopt om lege tabel te voorkomen.")
   }
-  
+
   cat("Records:", nrow(df), "| Kolommen:", ncol(df), "\n")
-  
-  # Lege Excel-kolommen verwijderen (zoals "X", "X.1", "X.2", ...)
-  df <- df[, !grepl("^X(\\.[0-9]+)?$", names(df)), drop = FALSE]
   
   # Datums omzetten
   if (!is.null(datum_kolommen)) {
