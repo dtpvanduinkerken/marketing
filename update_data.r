@@ -1,7 +1,7 @@
 # ==================================================
 # UPDATE_DATA.R
-# Importeert members, social media en nieuwsbrieven
-# en vernieuwt alleen de daarvan afhankelijke marts.
+# Importeert alle lokale dashboardbronnen, vernieuwt de
+# afhankelijke marts en bouwt het veilige Render-snapshot.
 # ==================================================
 
 source("update_database.R")
@@ -43,6 +43,12 @@ tryCatch(
     transactie_actief <- TRUE
 
     import_raw(
+      bestand = "coupons.csv",
+      tabel = "coupons",
+      datum_kolommen = "datum"
+    )
+
+    import_raw(
       bestand = "members.csv",
       tabel = "members",
       datum_kolommen = c(
@@ -51,6 +57,18 @@ tryCatch(
         "laatste_aankoop",
         "geboortedatum"
       )
+    )
+
+    import_raw(
+      bestand = "personal_pricing.csv",
+      tabel = "personal_pricing",
+      datum_kolommen = "datum"
+    )
+
+    import_raw(
+      bestand = "afspraken.csv",
+      tabel = "afspraken",
+      datum_kolommen = "datum"
     )
 
     import_raw(
@@ -71,11 +89,30 @@ tryCatch(
       datum_kolommen = "datum"
     )
 
+    import_raw(
+      bestand = "Verenigingen.csv",
+      tabel = "verenigingen",
+      datum_kolommen = NULL
+    )
+
+    import_raw(
+      bestand = "verenigingen_pricing.csv",
+      tabel = "verenigingen_pricing",
+      datum_kolommen = "datum"
+    )
+
     cat("\n==============================\n")
     cat("Afhankelijke marts vernieuwen\n")
     cat("==============================\n")
 
     run_sql_folder(con, "sql/mart", "members", "^members_.*\\.sql$")
+    run_sql_folder(con, "sql/mart", "coupons", "^coupon_.*\\.sql$")
+    run_sql_folder(
+      con,
+      "sql/mart",
+      "personal_pricing",
+      "^(pricing_performance|omzet_per_maand)\\.sql$"
+    )
     run_sql_folder(
       con,
       "sql/mart",
@@ -85,10 +122,16 @@ tryCatch(
     run_sql_folder(con, "sql/mart", "newsletters", "^newsletters\\.sql$")
 
     controles <- c(
+      "mart.coupon_kpis",
+      "mart.coupon_maand",
+      "mart.coupon_performance",
       "mart.members_activiteit",
       "mart.members_groei",
       "mart.members_kpis",
       "mart.members_woonplaats",
+      "mart.pricing_performance",
+      "mart.omzet_per_maand",
+      "mart.afspraken_kpis",
       "mart.social_media_kpis",
       "mart.social_media_platform",
       "mart.social_media_volgergroei",
@@ -96,7 +139,9 @@ tryCatch(
       "mart.post_type_performance",
       "mart.post_performance",
       "mart.newsletter_kpis",
-      "staging.newsletters"
+      "staging.newsletters",
+      "raw.verenigingen",
+      "raw.verenigingen_pricing"
     )
 
     for (object in controles) {
@@ -104,13 +149,23 @@ tryCatch(
     }
 
     aantallen <- dbGetQuery(con, "
-      SELECT 'members' AS bron, COUNT(*) AS records FROM raw.members
+      SELECT 'coupons' AS bron, COUNT(*) AS records FROM raw.coupons
+      UNION ALL
+      SELECT 'members', COUNT(*) FROM raw.members
+      UNION ALL
+      SELECT 'personal_pricing', COUNT(*) FROM raw.personal_pricing
+      UNION ALL
+      SELECT 'afspraken', COUNT(*) FROM raw.afspraken
       UNION ALL
       SELECT 'social_media', COUNT(*) FROM raw.social_media
       UNION ALL
       SELECT 'social_media_volgers', COUNT(*) FROM raw.social_media_volgers
       UNION ALL
       SELECT 'newsletters', COUNT(*) FROM raw.newsletters
+      UNION ALL
+      SELECT 'verenigingen', COUNT(*) FROM raw.verenigingen
+      UNION ALL
+      SELECT 'verenigingen_pricing', COUNT(*) FROM raw.verenigingen_pricing
       ORDER BY bron
     ")
 
@@ -128,7 +183,7 @@ tryCatch(
       snapshot_pad = snapshot_pad
     )
 
-    cat("\n✔ Members, social media, nieuwsbrieven en het dashboard-snapshot zijn bijgewerkt.\n")
+    cat("\n✔ Alle dashboardbronnen, marts en het Render-snapshot zijn bijgewerkt.\n")
   },
   error = function(e) {
     if (transactie_actief && DBI::dbIsValid(con)) {

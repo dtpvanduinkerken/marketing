@@ -136,6 +136,25 @@ update_csv <- function(
     datum_kolommen <- unique(c(datum_kolommen, "datum"))
   }
 
+  if (identical(tabel, "verenigingen")) {
+    vereniging_kolommen <- c(
+      "Vereniging.ID" = "vereniging_id",
+      "Vereniging" = "vereniging",
+      "Sport" = "sport",
+      "Aantal.leden" = "aantal_leden",
+      "Aantal.members" = "aantal_members"
+    )
+    hernoemen <- intersect(names(vereniging_kolommen), names(df))
+    names(df)[match(hernoemen, names(df))] <- unname(vereniging_kolommen[hernoemen])
+
+    vereist <- unname(vereniging_kolommen)
+    ontbrekend <- setdiff(vereist, names(df))
+    if (length(ontbrekend) > 0) {
+      stop("Verenigingenexport mist verplichte kolommen: ", paste(ontbrekend, collapse = ", "))
+    }
+    df <- df[, vereist, drop = FALSE]
+  }
+
   # De members-export bevat een geboortedatum. Behandel die kolom altijd
   # als datum, ook wanneer de aanroeper geen datum_kolommen meegeeft.
   if ("geboortedatum" %in% names(df)) {
