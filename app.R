@@ -1339,6 +1339,20 @@ ui <- dashboardPage(
           column(3, kpi_card("Totaal verzonden", textOutput("nieuwsbrief_verzonden"))),
           column(3, kpi_card("Totaal clicks", textOutput("nieuwsbrief_clicks")))
         ),
+
+        fluidRow(
+          box(
+            width = 12,
+            title = "Bekijk één nieuwsbrief",
+            selectizeInput(
+              "nieuwsbrief_selectie",
+              "Kies een nieuwsbrief",
+              choices = NULL,
+              options = list(placeholder = "Zoek op datum of campagnenaam")
+            ),
+            tableOutput("nieuwsbrief_detail")
+          )
+        ),
         
         br(),
         
@@ -1768,9 +1782,50 @@ server <- function(input, output, session) {
         ctr = round(clicks / sent * 100, 1),
         bounce_rate = round(bounces / sent * 100, 1),
         unsubscribe_rate = round(unsubscribers / sent * 100, 1)
-      )
+      ) |>
+      arrange(desc(datum), campagne) |>
+      mutate(campagne_id = as.character(row_number()))
     
   })
+
+  observeEvent(nieuwsbrief_data(), {
+    df <- nieuwsbrief_data()
+    keuzes <- setNames(
+      df$campagne_id,
+      paste(format(as.Date(df$datum), "%d-%m-%Y"), df$campagne, sep = " — ")
+    )
+    updateSelectizeInput(
+      session,
+      "nieuwsbrief_selectie",
+      choices = keuzes,
+      selected = if (length(keuzes) > 0) unname(keuzes[1]) else character(),
+      server = TRUE
+    )
+  }, once = TRUE)
+
+  geselecteerde_nieuwsbrief <- reactive({
+    req(input$nieuwsbrief_selectie)
+    df <- nieuwsbrief_data()
+    selectie <- df[df$campagne_id == input$nieuwsbrief_selectie, , drop = FALSE]
+    validate(need(nrow(selectie) == 1, "Selecteer een nieuwsbrief."))
+    selectie
+  })
+
+  output$nieuwsbrief_detail <- renderTable({
+    selectie <- geselecteerde_nieuwsbrief()
+    data.frame(
+      Datum = format(as.Date(selectie$datum), "%d-%m-%Y"),
+      Campagne = selectie$campagne,
+      Verzonden = format_number(selectie$sent),
+      `Unieke opens` = format_number(selectie$opens),
+      `Open rate` = paste0(selectie$open_rate, "%"),
+      `Unieke clicks` = format_number(selectie$clicks),
+      CTR = paste0(selectie$ctr, "%"),
+      Bounces = format_number(selectie$bounces),
+      Uitschrijvingen = format_number(selectie$unsubscribers),
+      check.names = FALSE
+    )
+  }, striped = TRUE, bordered = FALSE, spacing = "m", align = "l")
   
   output$nieuwsbrief_openrate <- renderText({
     paste0(round(mean(nieuwsbrief_data()$open_rate, na.rm = TRUE), 1), "%")
