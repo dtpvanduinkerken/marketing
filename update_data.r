@@ -7,6 +7,7 @@
 source("update_database.R")
 source("update_render_snapshot.R")
 source("mailchimp.R")
+source("simplybook.R")
 
 database_pad <- Sys.getenv("DASHBOARD_DB_PATH", unset = "bedrijf.duckdb")
 snapshot_pad <- Sys.getenv("DASHBOARD_SNAPSHOT_PATH", unset = "render_snapshot.duckdb")
@@ -66,11 +67,50 @@ tryCatch(
       datum_kolommen = "datum"
     )
 
-    import_raw(
-      bestand = "afspraken.csv",
-      tabel = "afspraken",
-      datum_kolommen = "datum"
-    )
+    simplybook_ingesteld <- all(nzchar(c(
+      Sys.getenv("SIMPLYBOOK_COMPANY_LOGIN"),
+      Sys.getenv("SIMPLYBOOK_USER_LOGIN"),
+      Sys.getenv("SIMPLYBOOK_USER_KEY")
+    )))
+
+    if (simplybook_ingesteld) {
+      cat("\n==============================\n")
+      cat("SimplyBook import: afspraken\n")
+      cat("==============================\n")
+
+      afspraken_simplybook <- tryCatch(
+        fetch_simplybook_afspraken(),
+        error = function(e) {
+          warning(
+            "SimplyBook kon niet worden opgehaald; lokale CSV wordt gebruikt: ",
+            conditionMessage(e)
+          )
+          NULL
+        }
+      )
+
+      if (!is.null(afspraken_simplybook)) {
+        DBI::dbWriteTable(
+          con,
+          DBI::Id(schema = "raw", table = "afspraken"),
+          afspraken_simplybook,
+          overwrite = TRUE
+        )
+        cat("Records:", nrow(afspraken_simplybook), "| Bron: SimplyBook API\n")
+      } else {
+        import_raw(
+          bestand = "afspraken.csv",
+          tabel = "afspraken",
+          datum_kolommen = "datum"
+        )
+      }
+    } else {
+      import_raw(
+        bestand = "afspraken.csv",
+        tabel = "afspraken",
+        datum_kolommen = "datum"
+      )
+    }
 
     import_raw(
       bestand = "social_media.csv",
