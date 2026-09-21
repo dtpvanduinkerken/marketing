@@ -671,6 +671,63 @@ table th:not(:first-child) {
 }
 
 /* =====================================
+   NIEUWSBRIEFDETAIL
+===================================== */
+
+.newsletter-kpis {
+  margin-bottom: 20px;
+}
+
+.newsletter-selector .form-group {
+  margin-bottom: 0;
+}
+
+.newsletter-detail__grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 18px;
+}
+
+.newsletter-detail__item {
+  align-items: flex-start;
+  background: #f8fafc;
+  border: 1px solid #edf0f2;
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  min-height: 78px;
+  padding: 14px 16px;
+}
+
+.newsletter-detail__label {
+  color: #6b7280;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  margin-bottom: 7px;
+  text-transform: uppercase;
+}
+
+.newsletter-detail__value {
+  color: #111827;
+  font-size: 19px;
+  line-height: 1.2;
+}
+
+@media (max-width: 991px) {
+  .newsletter-detail__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 575px) {
+  .newsletter-detail__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* =====================================
    PLOTLY CHARTS
 ===================================== */
 

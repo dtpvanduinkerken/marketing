@@ -1166,7 +1166,7 @@ ui <- dashboardPage(
   dashboardBody(
     
     tags$head(
-      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css")
+      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20260921-1")
     ),
     
     tabItems(
@@ -1334,6 +1334,7 @@ ui <- dashboardPage(
         h2("Nieuwsbrief Analytics"),
         
         fluidRow(
+          class = "newsletter-kpis",
           column(3, kpi_card("Gem. Open Rate", textOutput("nieuwsbrief_openrate"))),
           column(3, kpi_card("Gem. CTR", textOutput("nieuwsbrief_ctr"))),
           column(3, kpi_card("Totaal verzonden", textOutput("nieuwsbrief_verzonden"))),
@@ -1344,18 +1345,19 @@ ui <- dashboardPage(
           box(
             width = 12,
             title = "Bekijk één nieuwsbrief",
-            selectizeInput(
-              "nieuwsbrief_selectie",
-              "Kies een nieuwsbrief",
-              choices = NULL,
-              options = list(placeholder = "Zoek op datum of campagnenaam")
-            ),
-            tableOutput("nieuwsbrief_detail")
+            div(
+              class = "newsletter-selector",
+              selectizeInput(
+                "nieuwsbrief_selectie",
+                "Kies een nieuwsbrief",
+                choices = NULL,
+                options = list(placeholder = "Zoek op datum of campagnenaam")
+              ),
+              uiOutput("nieuwsbrief_detail")
+            )
           )
         ),
-        
-        br(),
-        
+
         fluidRow(
           box(width = 12, title = "Open Rate ontwikkeling",
               plotlyOutput("nieuwsbrief_trend_plot", height = "350px"))
@@ -1811,21 +1813,32 @@ server <- function(input, output, session) {
     selectie
   })
 
-  output$nieuwsbrief_detail <- renderTable({
+  output$nieuwsbrief_detail <- renderUI({
     selectie <- geselecteerde_nieuwsbrief()
-    data.frame(
-      Datum = format(as.Date(selectie$datum), "%d-%m-%Y"),
-      Campagne = selectie$campagne,
-      Verzonden = format_number(selectie$sent),
-      `Unieke opens` = format_number(selectie$opens),
-      `Open rate` = paste0(selectie$open_rate, "%"),
-      `Unieke clicks` = format_number(selectie$clicks),
-      CTR = paste0(selectie$ctr, "%"),
-      Bounces = format_number(selectie$bounces),
-      Uitschrijvingen = format_number(selectie$unsubscribers),
-      check.names = FALSE
+
+    detailwaarde <- function(label, waarde) {
+      div(
+        class = "newsletter-detail__item",
+        span(class = "newsletter-detail__label", label),
+        strong(class = "newsletter-detail__value", waarde)
+      )
+    }
+
+    div(
+      class = "newsletter-detail",
+      div(
+        class = "newsletter-detail__grid",
+        detailwaarde("Datum", format(as.Date(selectie$datum), "%d-%m-%Y")),
+        detailwaarde("Verzonden", format_number(selectie$sent)),
+        detailwaarde("Unieke opens", format_number(selectie$opens)),
+        detailwaarde("Open rate", paste0(selectie$open_rate, "%")),
+        detailwaarde("Unieke clicks", format_number(selectie$clicks)),
+        detailwaarde("CTR", paste0(selectie$ctr, "%")),
+        detailwaarde("Bounces", format_number(selectie$bounces)),
+        detailwaarde("Uitschrijvingen", format_number(selectie$unsubscribers))
+      )
     )
-  }, striped = TRUE, bordered = FALSE, spacing = "m", align = "l")
+  })
   
   output$nieuwsbrief_openrate <- renderText({
     paste0(round(mean(nieuwsbrief_data()$open_rate, na.rm = TRUE), 1), "%")
