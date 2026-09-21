@@ -18,7 +18,10 @@ omgeving waarin `update_data.r` draait deze variabelen in:
 
 Sla deze waarden niet op in Git of in een CSV-bestand. Bij iedere uitvoering
 van `update_data.r` worden de afspraken opnieuw opgehaald en worden de
-dashboardtabellen en het veilige Render-snapshot bijgewerkt.
+dashboardtabellen en het veilige Render-snapshot bijgewerkt. Op Render worden
+de afspraakcijfers daarnaast bij het openen van een dashboardsessie live
+opgehaald. Als SimplyBook tijdelijk niet bereikbaar is, blijft het laatst
+gebouwde snapshot zichtbaar.
 
 De import bewaart alleen de velden die het dashboard nodig heeft:
 afspraakdatum, dienst, annuleringsstatus en categorie. Klant-ID's, namen,

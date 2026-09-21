@@ -24,6 +24,7 @@ RUN R -e "install.packages(c( \
     'duckdb', \
     'plotly', \
     'dplyr', \
+    'httr2', \
     'googleAnalyticsR', \
     'base64enc' \
     ), repos='https://packagemanager.posit.co/cran/__linux__/jammy/latest')"

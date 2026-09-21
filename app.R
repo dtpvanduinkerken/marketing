@@ -6,6 +6,8 @@ library(plotly)
 library(dplyr)
 library(googleAnalyticsR)
 
+if (file.exists("simplybook.R")) source("simplybook.R")
+
 # --------------------------------------------------
 # CONSTANTEN
 # --------------------------------------------------
@@ -1621,6 +1623,16 @@ ui <- dashboardPage(
 # --------------------------------------------------
 
 server <- function(input, output, session) {
+  # Ververs de afspraakcijfers per dashboardsessie. Bij een tijdelijke
+  # API-storing blijft het laatst gebouwde, veilige snapshot zichtbaar.
+  data <- tryCatch(
+    vervang_afspraken_met_simplybook(data),
+    error = function(e) {
+      warning("Live SimplyBook-data niet beschikbaar: ", conditionMessage(e))
+      data
+    }
+  )
+
   website_live <- reactiveVal(list(
     kpis = leeg_website_kpis,
     dagelijks = leeg_website_dagelijks,

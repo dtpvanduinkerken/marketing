@@ -151,3 +151,41 @@ fetch_simplybook_afspraken <- function(
   rownames(resultaat) <- NULL
   resultaat
 }
+
+vervang_afspraken_met_simplybook <- function(data) {
+  vereist <- c(
+    Sys.getenv("SIMPLYBOOK_COMPANY_LOGIN"),
+    Sys.getenv("SIMPLYBOOK_USER_LOGIN"),
+    Sys.getenv("SIMPLYBOOK_USER_KEY")
+  )
+  if (!all(nzchar(vereist))) return(data)
+
+  afspraken <- fetch_simplybook_afspraken()
+  if (nrow(afspraken) == 0) {
+    stop("SimplyBook heeft geen afspraken teruggegeven; snapshot blijft actief.")
+  }
+
+  per_dienst <- aggregate(
+    list(totaal = rep(1L, nrow(afspraken))),
+    list(dienst = afspraken$dienst),
+    sum
+  )
+  per_dienst <- per_dienst[order(per_dienst$totaal, decreasing = TRUE), , drop = FALSE]
+
+  maand <- as.Date(format(afspraken$datum, "%Y-%m-01"))
+  over_tijd <- aggregate(
+    list(totaal = rep(1L, nrow(afspraken))),
+    list(maand = maand),
+    sum
+  )
+  over_tijd <- over_tijd[order(over_tijd$maand), , drop = FALSE]
+
+  data$afspraken <- data.frame(totaal_afspraken = nrow(afspraken))
+  data$afspraken_per_dienst <- per_dienst
+  data$afspraken_kpis_detail <- data.frame(
+    totaal_afspraken = nrow(afspraken),
+    aantal_diensten = length(unique(afspraken$dienst))
+  )
+  data$afspraken_over_tijd <- over_tijd
+  data
+}
