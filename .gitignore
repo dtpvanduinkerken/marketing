@@ -6,6 +6,7 @@ data/archive/
 /data/members.csv
 
 # Lokale authenticatiebestanden en sleutels nooit publiceren.
+.Renviron
 ga_token.rds
 ga_token_base64.txt
 secrets/

@@ -9,6 +9,7 @@ pkgs <- c(
   "duckdb",
   "plotly",
   "dplyr",
+  "httr2",
   "googleAnalyticsR"
 )
 

@@ -6,6 +6,7 @@
 
 source("update_database.R")
 source("update_render_snapshot.R")
+source("mailchimp.R")
 
 database_pad <- Sys.getenv("DASHBOARD_DB_PATH", unset = "bedrijf.duckdb")
 snapshot_pad <- Sys.getenv("DASHBOARD_SNAPSHOT_PATH", unset = "render_snapshot.duckdb")
@@ -77,11 +78,48 @@ tryCatch(
       datum_kolommen = "datum"
     )
 
-    import_raw(
-      bestand = "nieuwsbrieven_data.csv",
-      tabel = "newsletters",
-      datum_kolommen = "datum"
-    )
+    mailchimp_ingesteld <- nzchar(Sys.getenv("MAILCHIMP_API_KEY")) &&
+      nzchar(Sys.getenv("MAILCHIMP_SERVER"))
+
+    if (mailchimp_ingesteld) {
+      cat("\n==============================\n")
+      cat("Mailchimp import: campagnerapporten\n")
+      cat("==============================\n")
+
+      newsletters <- tryCatch(
+        fetch_mailchimp_newsletters(),
+        error = function(e) {
+          warning(
+            "Mailchimp kon niet worden opgehaald; lokale CSV wordt gebruikt: ",
+            conditionMessage(e)
+          )
+          NULL
+        }
+      )
+
+      if (!is.null(newsletters)) {
+        DBI::dbWriteTable(
+          con,
+          DBI::Id(schema = "raw", table = "newsletters"),
+          newsletters,
+          overwrite = TRUE
+        )
+        cat("Records:", nrow(newsletters), "| Bron: Mailchimp API\n")
+      } else {
+        import_raw(
+          bestand = "nieuwsbrieven_data.csv",
+          tabel = "newsletters",
+          datum_kolommen = "datum"
+        )
+      }
+    } else {
+      message("Mailchimp is niet ingesteld; lokale nieuwsbrief-CSV wordt gebruikt.")
+      import_raw(
+        bestand = "nieuwsbrieven_data.csv",
+        tabel = "newsletters",
+        datum_kolommen = "datum"
+      )
+    }
 
     import_raw(
       bestand = "social_media_volgers.csv",
