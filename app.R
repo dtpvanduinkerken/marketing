@@ -478,11 +478,11 @@ laad_verenigingen_data <- function(con) {
   maak_verenigingen_dataset(verenigingen, pricing)
 }
 
-maak_leeg_plot <- function() {
+maak_leeg_plot <- function(message = "Geen data voor deze selectie") {
   plot_ly() |> layout(
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)",
     xaxis = list(visible = FALSE), yaxis = list(visible = FALSE),
-    annotations = list(list(text = "Geen data voor deze selectie", showarrow = FALSE,
+    annotations = list(list(text = message, showarrow = FALSE,
                             font = list(color = "#9ca3af", size = 13)))
   )
 }
@@ -2216,6 +2216,18 @@ server <- function(input, output, session) {
       filter(metric_date >= grenzen$previous_start, metric_date <= grenzen$previous_end)
   })
 
+  instagram_period_comparison <- reactive({
+    if (!identical(input$social_platform, "instagram")) return(NULL)
+    grenzen <- social_period_bounds()
+    account_ids <- social_daily()$external_account_id
+    account_id <- if (length(account_ids)) as.character(account_ids[1]) else ""
+    if (!nzchar(account_id)) return(NULL)
+    list(
+      current = instagram_period_summary_cached(account_id, grenzen$start, grenzen$end),
+      previous = instagram_period_summary_cached(account_id, grenzen$previous_start, grenzen$previous_end)
+    )
+  })
+
   laatste_volgers <- function(df, datum) {
     waarden <- df |> filter(metric_date <= datum, !is.na(followers_count)) |> arrange(metric_date)
     if (!nrow(waarden)) NA_real_ else tail(waarden$followers_count, 1)
@@ -2281,6 +2293,12 @@ server <- function(input, output, session) {
     views_vorig <- social_sum(vorig$media_views)
     interacties_nu <- social_sum(huidig$post_engagements)
     interacties_vorig <- social_sum(vorig$post_engagements)
+    instagram_period <- instagram_period_comparison()
+    if (is_instagram && !is.null(instagram_period)) {
+      volgers_groei <- instagram_period$current$follower_change
+      interacties_nu <- instagram_period$current$total_interactions
+      interacties_vorig <- instagram_period$previous$total_interactions
+    }
     views_delta <- social_delta(views_nu, views_vorig)
     interacties_delta <- social_delta(interacties_nu, interacties_vorig)
     div(
@@ -2289,16 +2307,21 @@ server <- function(input, output, session) {
       kpi_card(
         "Groei in volgers",
         if (is.na(volgers_groei)) "Niet beschikbaar" else paste0(if (volgers_groei > 0) "+" else "", social_number(volgers_groei)),
-        subtitel = if (is.na(volgers_groei)) "Meta leverde geen oudere meting" else "binnen geselecteerde periode"
+        subtitel = if (is.na(volgers_groei)) {
+          if (is_instagram) "Meta leverde geen groeigegevens" else "Meta leverde geen oudere meting"
+        } else if (is_instagram) "nieuwe volgers minus ontvolgers" else "binnen geselecteerde periode"
       ),
       kpi_card(if (is_instagram) "Totaal dagelijks bereik" else "Totaal aantal weergaven", social_number(views_nu), views_delta$class, views_delta$label, "t.o.v. vorige gelijke periode"),
-      kpi_card("Totaal aantal interacties", social_number(interacties_nu), subtitel = "dagtotalen binnen periode"),
+      kpi_card("Totaal aantal interacties", social_number(interacties_nu), subtitel = if (is_instagram) "totaal binnen geselecteerde periode" else "dagtotalen binnen periode"),
       kpi_card("Interactieontwikkeling", interacties_delta$label %||% "Niet beschikbaar", interacties_delta$class, interacties_delta$label, "t.o.v. vorige gelijke periode")
     )
   })
 
   output$social_followers_plot <- renderPlotly({
     df <- social_current_daily() |> filter(!is.na(followers_count))
+    if (identical(input$social_platform, "instagram") && nrow(df) < 2) {
+      return(maak_leeg_plot("Instagram levert hier alleen de actuele totaalstand"))
+    }
     if (!nrow(df)) return(maak_leeg_plot())
     maak_lijn_plot(df, "metric_date", "followers_count", "Volgers", fill = FALSE)
   })
@@ -2311,6 +2334,9 @@ server <- function(input, output, session) {
 
   output$social_engagement_plot <- renderPlotly({
     df <- social_current_daily() |> filter(!is.na(post_engagements))
+    if (identical(input$social_platform, "instagram") && !nrow(df)) {
+      return(maak_leeg_plot("Instagram levert interacties als periodetotaal"))
+    }
     if (!nrow(df)) return(maak_leeg_plot())
     maak_lijn_plot(df, "metric_date", "post_engagements", "Interacties", lijn_kleur = KLEUR_SECUNDAIR)
   })

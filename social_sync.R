@@ -360,3 +360,63 @@ instagram_fetch_media_metric <- function(media_id, metric, cfg) {
   )
 }
 
+instagram_fetch_total_metric <- function(account_id, metric, since, until, cfg) {
+  tryCatch(
+    instagram_graph_request(
+      paste0(account_id, "/insights"),
+      list(
+        metric = metric, period = "day", metric_type = "total_value",
+        since = format(as.Date(since), "%Y-%m-%d"),
+        until = format(as.Date(until) + 1, "%Y-%m-%d")
+      ),
+      cfg
+    ) |>
+      instagram_insight_number(),
+    instagram_api_error = function(e) NA_real_
+  )
+}
+
+instagram_follow_breakdown <- function(response) {
+  data <- response$data %||% list()
+  if (!length(data)) return(list(follows = NA_real_, unfollows = NA_real_, net = NA_real_))
+  breakdowns <- (data[[1]]$total_value %||% list())$breakdowns %||% list()
+  if (!length(breakdowns)) return(list(follows = NA_real_, unfollows = NA_real_, net = NA_real_))
+  results <- breakdowns[[1]]$results %||% list()
+  values <- setNames(numeric(), character())
+  for (result in results) {
+    dimensions <- result$dimension_values %||% list()
+    label <- if (length(dimensions)) toupper(as.character(dimensions[[1]])) else ""
+    if (nzchar(label)) values[label] <- suppressWarnings(as.numeric(result$value %||% NA_real_))
+  }
+  follows <- unname(values["FOLLOWER"] %||% NA_real_)
+  unfollows <- unname(values["NON_FOLLOWER"] %||% NA_real_)
+  net <- if (is.na(follows) || is.na(unfollows)) NA_real_ else follows - unfollows
+  list(follows = follows, unfollows = unfollows, net = net)
+}
+
+instagram_fetch_follow_change <- function(account_id, since, until, cfg) {
+  tryCatch({
+    response <- instagram_graph_request(
+      paste0(account_id, "/insights"),
+      list(
+        metric = "follows_and_unfollows", period = "day", metric_type = "total_value",
+        breakdown = "follow_type",
+        since = format(as.Date(since), "%Y-%m-%d"),
+        until = format(as.Date(until) + 1, "%Y-%m-%d")
+      ),
+      cfg
+    )
+    instagram_follow_breakdown(response)
+  }, instagram_api_error = function(e) list(follows = NA_real_, unfollows = NA_real_, net = NA_real_))
+}
+
+instagram_fetch_period_summary <- function(account_id, since, until, cfg = instagram_config()) {
+  follow_change <- instagram_fetch_follow_change(account_id, since, until, cfg)
+  list(
+    total_interactions = instagram_fetch_total_metric(account_id, "total_interactions", since, until, cfg),
+    follows = follow_change$follows,
+    unfollows = follow_change$unfollows,
+    follower_change = follow_change$net
+  )
+}
+

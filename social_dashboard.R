@@ -3,6 +3,7 @@ source("social_sync.R")
 .social_api_cache <- new.env(parent = emptyenv())
 .social_api_cache$value <- NULL
 .social_api_cache$loaded_at <- as.POSIXct(NA)
+.instagram_period_cache <- new.env(parent = emptyenv())
 
 leeg_social_live <- function(message = "Live socialmediadata is nog niet beschikbaar.") {
   list(
@@ -280,4 +281,20 @@ social_delta <- function(current, previous) {
   pct <- round((current - previous) / previous * 100, 1)
   list(value = pct, label = paste0(if (pct > 0) "+" else "", format(pct, decimal.mark = ","), "%"),
        class = if (pct > 0) "kpi-trend-up" else if (pct < 0) "kpi-trend-down" else NULL)
+}
+
+instagram_period_summary_cached <- function(account_id, since, until) {
+  key <- paste(account_id, as.Date(since), as.Date(until), sep = "|")
+  if (exists(key, envir = .instagram_period_cache, inherits = FALSE)) {
+    return(get(key, envir = .instagram_period_cache, inherits = FALSE))
+  }
+  result <- tryCatch(
+    instagram_fetch_period_summary(account_id, since, until),
+    error = function(e) list(
+      total_interactions = NA_real_, follows = NA_real_,
+      unfollows = NA_real_, follower_change = NA_real_
+    )
+  )
+  assign(key, result, envir = .instagram_period_cache)
+  result
 }

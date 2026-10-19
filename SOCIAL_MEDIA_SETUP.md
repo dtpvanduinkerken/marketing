@@ -42,6 +42,8 @@ De app-ID en app-secret worden gebruikt om de geldigheid van het token te contro
 - Dagelijkse weergaven en interacties worden voor de door Meta ondersteunde historische periode rechtstreeks opgehaald.
 - Het actuele volgersaantal komt rechtstreeks van de pagina.
 - De historische volgersreeks komt uit de Page Insights-metric `page_follows`. Als Meta voor een periode geen oudere meting teruggeeft, blijft groei voor die selectie **Niet beschikbaar**.
+- Voor Instagram toont de volgersgrafiek geen misleidende lijn wanneer Meta alleen de actuele totaalstand levert. De KPI **Groei in volgers** gebruikt, indien beschikbaar, het aantal nieuwe volgers minus het aantal ontvolgers binnen de geselecteerde periode.
+- Instagram-interacties worden door Meta als totaal over de geselecteerde periode geleverd. Daarom kan de KPI wel gevuld zijn terwijl de dagelijkse interactiegrafiek uitlegt dat er geen dagreeks beschikbaar is.
 - Berichtstatistieken worden live opgehaald voor maximaal het ingestelde aantal recente berichten.
 - Likes en opmerkingen worden alleen getoond als het token daarvoor toestemming heeft. Zonder `pages_read_user_content` blijven deze velden **Niet beschikbaar**; de rest van het dashboard blijft werken.
 - Als Meta ook de berichtenlijst blokkeert, slaat het dashboard dit onderdeel over. De beschikbare pagina-KPI's blijven dan zichtbaar met een waarschuwing bij de synchronisatiestatus.

@@ -51,6 +51,31 @@ stopifnot(identical(instagram_insight_number(list(data = list(list(total_value =
 stopifnot(identical(instagram_insight_number(list(data = list(list(values = list(list(value = 7)))))), 7))
 stopifnot(is.na(instagram_insight_number(list(data = list()))))
 stopifnot(grepl("TOKEN VERWIJDERD", social_error_message(simpleError("token IGAAabcdefghijklmnop"))))
+
+follow_fixture <- list(data = list(list(total_value = list(breakdowns = list(list(results = list(
+  list(dimension_values = list("FOLLOWER"), value = 18),
+  list(dimension_values = list("NON_FOLLOWER"), value = 7)
+)))))))
+follow_change <- instagram_follow_breakdown(follow_fixture)
+stopifnot(identical(follow_change$follows, 18), identical(follow_change$unfollows, 7), identical(follow_change$net, 11))
+
+original_instagram_request <- instagram_graph_request
+instagram_graph_request <- function(path, query, cfg) {
+  if (identical(query$metric, "total_interactions")) {
+    return(list(data = list(list(total_value = list(value = 123)))))
+  }
+  follow_fixture
+}
+period_summary <- instagram_fetch_period_summary(
+  "1789", as.Date("2026-09-20"), as.Date("2026-10-19"), list()
+)
+instagram_graph_request <- original_instagram_request
+stopifnot(
+  identical(period_summary$total_interactions, 123),
+  identical(period_summary$follows, 18),
+  identical(period_summary$unfollows, 7),
+  identical(period_summary$follower_change, 11)
+)
 stopifnot(grepl("TOKEN VERWIJDERD", social_error_message(simpleError("token EAAabcdefghijklmnop"))))
 
 empty_post_insights <- list(data = list(list(name = "post_media_view", values = list())))
