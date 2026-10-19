@@ -1169,7 +1169,7 @@ ui <- dashboardPage(
   dashboardBody(
     
     tags$head(
-      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20260921-1")
+      tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=20261019-1")
     ),
     
     tabItems(
@@ -1388,32 +1388,34 @@ ui <- dashboardPage(
         h2("Social Media"),
         div(
           class = "social-filterbar",
-          fluidRow(
-            column(3, selectInput("social_platform", "Platform", choices = c("Facebook" = "facebook"))),
-            column(3, selectInput(
+          div(
+            class = "social-filter-grid",
+            div(class = "social-filter-item", selectInput("social_platform", "Platform", choices = c("Facebook" = "facebook"))),
+            div(class = "social-filter-item", selectInput(
               "social_period", "Periode",
               choices = c("Afgelopen 7 dagen" = "7", "Afgelopen 30 dagen" = "30",
                           "Afgelopen 90 dagen" = "90", "Zelf kiezen" = "custom"),
               selected = "30"
             )),
-            column(3, conditionalPanel(
+            conditionalPanel(
+              class = "social-filter-item social-filter-item--dates",
               condition = "input.social_period == 'custom'",
               dateRangeInput("social_dates", "Datumbereik", start = Sys.Date() - 29, end = Sys.Date(),
                              format = "dd-mm-yyyy", language = "nl")
-            )),
-            column(3, uiOutput("social_type_filter"))
+            ),
+            div(class = "social-filter-item social-filter-item--type", uiOutput("social_type_filter"))
           )
         ),
         uiOutput("social_sync_status"),
         uiOutput("social_kpis"),
-        fluidRow(
+        fluidRow(class = "social-chart-row",
           box(width = 4, title = "Ontwikkeling volgers", plotlyOutput("social_followers_plot", height = "320px")),
           box(width = 4, title = "Dagelijkse weergaven", plotlyOutput("social_views_plot", height = "320px")),
           box(width = 4, title = "Dagelijkse interacties", plotlyOutput("social_engagement_plot", height = "320px"))
         ),
         h3(class = "social-content-heading", "Contentprestaties"),
         uiOutput("social_content_cards"),
-        fluidRow(
+        fluidRow(class = "social-table-row",
           box(width = 6, title = "Top 5 op interacties", tableOutput("social_top_engagement")),
           box(width = 6, title = "Top 5 op weergaven", tableOutput("social_top_views"))
         )
@@ -2251,7 +2253,7 @@ server <- function(input, output, session) {
     vorig <- social_previous_daily()
     grenzen <- social_period_bounds()
     volgers_nu <- laatste_volgers(social_daily(), grenzen$end)
-    volgers_start <- laatste_volgers(social_daily(), grenzen$start)
+    volgers_start <- laatste_volgers(social_daily(), grenzen$start - 1)
     volgers_groei <- if (is.na(volgers_nu) || is.na(volgers_start)) NA_real_ else volgers_nu - volgers_start
     views_nu <- social_sum(huidig$media_views)
     views_vorig <- social_sum(vorig$media_views)
@@ -2259,16 +2261,17 @@ server <- function(input, output, session) {
     interacties_vorig <- social_sum(vorig$post_engagements)
     views_delta <- social_delta(views_nu, views_vorig)
     interacties_delta <- social_delta(interacties_nu, interacties_vorig)
-    tagList(
-      fluidRow(
-        column(4, kpi_card("Huidig aantal volgers", social_number(volgers_nu), subtitel = "laatste momentopname")),
-        column(4, kpi_card("Groei in volgers", if (is.na(volgers_groei)) "Niet beschikbaar" else paste0(if (volgers_groei > 0) "+" else "", social_number(volgers_groei)), subtitel = "binnen geselecteerde periode")),
-        column(4, kpi_card("Totaal aantal weergaven", social_number(views_nu), views_delta$class, views_delta$label, "t.o.v. vorige gelijke periode"))
+    div(
+      class = "social-kpi-grid",
+      kpi_card("Huidig aantal volgers", social_number(volgers_nu), subtitel = "laatste momentopname"),
+      kpi_card(
+        "Groei in volgers",
+        if (is.na(volgers_groei)) "Niet beschikbaar" else paste0(if (volgers_groei > 0) "+" else "", social_number(volgers_groei)),
+        subtitel = if (is.na(volgers_groei)) "Meta leverde geen oudere meting" else "binnen geselecteerde periode"
       ),
-      fluidRow(
-        column(6, kpi_card("Totaal aantal interacties", social_number(interacties_nu), subtitel = "dagtotalen binnen periode")),
-        column(6, kpi_card("Interactieontwikkeling", interacties_delta$label %||% "Niet beschikbaar", interacties_delta$class, interacties_delta$label, "t.o.v. vorige gelijke periode"))
-      )
+      kpi_card("Totaal aantal weergaven", social_number(views_nu), views_delta$class, views_delta$label, "t.o.v. vorige gelijke periode"),
+      kpi_card("Totaal aantal interacties", social_number(interacties_nu), subtitel = "dagtotalen binnen periode"),
+      kpi_card("Interactieontwikkeling", interacties_delta$label %||% "Niet beschikbaar", interacties_delta$class, interacties_delta$label, "t.o.v. vorige gelijke periode")
     )
   })
 

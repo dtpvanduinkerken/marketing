@@ -73,12 +73,14 @@ meta_parse_insights <- function(response, timezone = "Europe/Amsterdam") {
           metric_date = datum,
           media_views = NA_real_,
           post_engagements = NA_real_,
+          followers_count = NA_real_,
           source_end_time = meta_epoch(waarde$end_time)
         )
       }
       getal <- suppressWarnings(as.numeric(waarde$value))
       if (identical(naam, "page_media_view")) rows[[sleutel]]$media_views <- getal
       if (identical(naam, "page_post_engagements")) rows[[sleutel]]$post_engagements <- getal
+      if (identical(naam, "page_follows")) rows[[sleutel]]$followers_count <- getal
     }
   }
   if (!length(rows)) return(data.frame())
@@ -86,6 +88,7 @@ meta_parse_insights <- function(response, timezone = "Europe/Amsterdam") {
     metric_date = as.Date(x$metric_date),
     media_views = x$media_views,
     post_engagements = x$post_engagements,
+    followers_count = x$followers_count,
     source_end_time = as.POSIXct(x$source_end_time, origin = "1970-01-01", tz = "UTC")
   )))
 }
@@ -114,6 +117,30 @@ meta_fetch_daily_insights <- function(cfg, since, until) {
   if (!length(delen)) return(data.frame())
   resultaat <- do.call(rbind, delen)
   resultaat[!duplicated(resultaat$metric_date, fromLast = TRUE), , drop = FALSE]
+}
+
+meta_fetch_follower_history <- function(cfg, since, until) {
+  tryCatch({
+    starts <- seq(as.Date(since), as.Date(until), by = 90)
+    delen <- lapply(starts, function(start) {
+      einde <- min(start + 89, as.Date(until))
+      response <- meta_graph_request(
+        paste0(cfg$page_id, "/insights"),
+        list(
+          metric = "page_follows",
+          period = "day",
+          since = format(start, "%Y-%m-%d"),
+          until = format(einde + 1, "%Y-%m-%d")
+        ),
+        cfg
+      )
+      meta_parse_insights(response, cfg$timezone)
+    })
+    delen <- delen[vapply(delen, nrow, integer(1)) > 0]
+    if (!length(delen)) return(data.frame())
+    resultaat <- do.call(rbind, delen)
+    resultaat[!duplicated(resultaat$metric_date, fromLast = TRUE), , drop = FALSE]
+  }, meta_api_error = function(e) data.frame())
 }
 
 meta_fetch_posts <- function(cfg, since) {

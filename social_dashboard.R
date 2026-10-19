@@ -54,15 +54,29 @@ fetch_social_live_api <- function(today = Sys.Date()) {
   fetched_at <- Sys.time()
   page <- meta_fetch_page(cfg)
   daily <- meta_fetch_daily_insights(cfg, today - 729, today)
+  follower_history <- meta_fetch_follower_history(cfg, today - 729, today)
   if (!nrow(daily)) {
     daily <- data.frame(metric_date = as.Date(today), media_views = NA_real_,
-                        post_engagements = NA_real_, source_end_time = as.POSIXct(NA))
+                        post_engagements = NA_real_, followers_count = NA_real_,
+                        source_end_time = as.POSIXct(NA))
+  }
+  if (!"followers_count" %in% names(daily)) daily$followers_count <- NA_real_
+  if (nrow(follower_history)) {
+    ontbrekende_datums <- setdiff(follower_history$metric_date, daily$metric_date)
+    if (length(ontbrekende_datums)) {
+      daily <- rbind(daily, data.frame(
+        metric_date = as.Date(ontbrekende_datums), media_views = NA_real_,
+        post_engagements = NA_real_, followers_count = NA_real_,
+        source_end_time = as.POSIXct(NA)
+      ))
+    }
+    doel <- match(follower_history$metric_date, daily$metric_date)
+    daily$followers_count[doel] <- follower_history$followers_count
   }
   daily$platform <- "facebook"
   daily$external_account_id <- as.character(page$id)
   daily$account_name <- as.character(page$name)
   daily$account_timezone <- cfg$timezone
-  daily$followers_count <- NA_real_
   daily$fan_count <- NA_real_
   daily$collected_at <- fetched_at
 
@@ -70,9 +84,9 @@ fetch_social_live_api <- function(today = Sys.Date()) {
   if (!length(today_index)) {
     daily <- rbind(daily, data.frame(
       metric_date = as.Date(today), media_views = NA_real_, post_engagements = NA_real_,
-      source_end_time = as.POSIXct(NA), platform = "facebook",
+      followers_count = NA_real_, source_end_time = as.POSIXct(NA), platform = "facebook",
       external_account_id = as.character(page$id), account_name = as.character(page$name),
-      account_timezone = cfg$timezone, followers_count = NA_real_, fan_count = NA_real_,
+      account_timezone = cfg$timezone, fan_count = NA_real_,
       collected_at = fetched_at
     ))
     today_index <- nrow(daily)

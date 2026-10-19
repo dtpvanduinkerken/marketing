@@ -23,11 +23,19 @@ parsed <- meta_parse_insights(fixture, "Europe/Amsterdam")
 stopifnot(nrow(parsed) == 2)
 stopifnot(identical(parsed$media_views, c(100, 80)))
 stopifnot(identical(parsed$post_engagements, c(12, 8)))
+stopifnot(all(is.na(parsed$followers_count)))
 stopifnot(identical(as.character(parsed$metric_date), c("2026-10-18", "2026-10-19")))
 
 post <- list(attachments = list(data = list(list(media_type = "photo"))))
 stopifnot(identical(meta_post_type(post), "photo"))
 stopifnot(identical(meta_summary_count(list(summary = list(total_count = 5))), 5))
+
+follower_fixture <- list(data = list(list(
+  name = "page_follows", period = "day",
+  values = list(list(value = 1234, end_time = "2026-10-20T07:00:00+0000"))
+)))
+follower_parsed <- meta_parse_insights(follower_fixture, "Europe/Amsterdam")
+stopifnot(identical(follower_parsed$followers_count, 1234))
 stopifnot(grepl("TOKEN VERWIJDERD", social_error_message(simpleError("token EAAabcdefghijklmnop"))))
 
 empty_post_insights <- list(data = list(list(name = "post_media_view", values = list())))
