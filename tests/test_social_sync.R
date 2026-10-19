@@ -36,6 +36,21 @@ follower_fixture <- list(data = list(list(
 )))
 follower_parsed <- meta_parse_insights(follower_fixture, "Europe/Amsterdam")
 stopifnot(identical(follower_parsed$followers_count, 1234))
+
+instagram_reach_fixture <- list(data = list(list(
+  name = "reach", period = "day",
+  values = list(
+    list(value = 42, end_time = "2026-10-19T07:00:00+0000"),
+    list(value = 55, end_time = "2026-10-20T07:00:00+0000")
+  )
+)))
+instagram_reach <- instagram_parse_reach_history(instagram_reach_fixture, "Europe/Amsterdam")
+stopifnot(identical(instagram_reach$media_views, c(42, 55)))
+stopifnot(identical(as.character(instagram_reach$metric_date), c("2026-10-18", "2026-10-19")))
+stopifnot(identical(instagram_insight_number(list(data = list(list(total_value = list(value = 19))))), 19))
+stopifnot(identical(instagram_insight_number(list(data = list(list(values = list(list(value = 7)))))), 7))
+stopifnot(is.na(instagram_insight_number(list(data = list()))))
+stopifnot(grepl("TOKEN VERWIJDERD", social_error_message(simpleError("token IGAAabcdefghijklmnop"))))
 stopifnot(grepl("TOKEN VERWIJDERD", social_error_message(simpleError("token EAAabcdefghijklmnop"))))
 
 empty_post_insights <- list(data = list(list(name = "post_media_view", values = list())))

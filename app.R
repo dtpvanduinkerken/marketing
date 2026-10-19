@@ -1390,7 +1390,7 @@ ui <- dashboardPage(
           class = "social-filterbar",
           div(
             class = "social-filter-grid",
-            div(class = "social-filter-item", selectInput("social_platform", "Platform", choices = c("Facebook" = "facebook"))),
+            div(class = "social-filter-item", uiOutput("social_platform_filter")),
             div(class = "social-filter-item", selectInput(
               "social_period", "Periode",
               choices = c("Afgelopen 7 dagen" = "7", "Afgelopen 30 dagen" = "30",
@@ -1410,7 +1410,7 @@ ui <- dashboardPage(
         uiOutput("social_kpis"),
         fluidRow(class = "social-chart-row",
           box(width = 4, title = "Ontwikkeling volgers", plotlyOutput("social_followers_plot", height = "320px")),
-          box(width = 4, title = "Dagelijkse weergaven", plotlyOutput("social_views_plot", height = "320px")),
+          box(width = 4, title = "Dagelijks bereik / weergaven", plotlyOutput("social_views_plot", height = "320px")),
           box(width = 4, title = "Dagelijkse interacties", plotlyOutput("social_engagement_plot", height = "320px"))
         ),
         h3(class = "social-content-heading", "Contentprestaties"),
@@ -2167,8 +2167,22 @@ server <- function(input, output, session) {
   })
 
   # SOCIAL MEDIA
+  output$social_platform_filter <- renderUI({
+    platforms <- unique(c(
+      as.character(data$social_live$daily$platform %||% character()),
+      as.character(data$social_live$posts$platform %||% character()),
+      as.character(data$social_live$sync$platform %||% character()),
+      as.character(data$social_live$warnings$platform %||% character())
+    ))
+    platforms <- platforms[nzchar(platforms)]
+    labels <- c(facebook = "Facebook", instagram = "Instagram")
+    choices <- setNames(platforms, unname(labels[platforms]))
+    selectInput("social_platform", "Platform", choices = choices)
+  })
+
   social_daily <- reactive({
     req(isTRUE(data$social_live$available))
+    req(input$social_platform)
     data$social_live$daily |>
       filter(platform == input$social_platform) |>
       arrange(metric_date)
@@ -2227,14 +2241,21 @@ server <- function(input, output, session) {
     if (!isTRUE(data$social_live$available)) {
       return(div(class = "social-status social-status--warning", icon("triangle-exclamation"), data$social_live$message))
     }
-    logs <- data$social_live$sync
+    req(input$social_platform)
+    logs <- data$social_live$sync |> filter(platform == input$social_platform)
     laatste <- if (nrow(logs)) logs[1, , drop = FALSE] else NULL
     laatste_succes <- logs |> filter(status == "success") |> head(1)
     bijgewerkt <- if (nrow(laatste_succes)) {
       format(as.POSIXct(laatste_succes$finished_at, tz = "UTC"), "%d-%m-%Y %H:%M", tz = "Europe/Amsterdam")
     } else "onbekend"
     fout <- !is.null(laatste) && identical(laatste$status[1], "error")
-    content_warning <- data$social_live$content_warning %||% ""
+    platform_warnings <- data$social_live$warnings %||% data.frame()
+    content_warning <- if (nrow(platform_warnings)) {
+      platform_warnings |>
+        filter(platform == input$social_platform) |>
+        pull(message) |>
+        paste(collapse = " ")
+    } else data$social_live$content_warning %||% ""
     heeft_content_warning <- nzchar(content_warning)
     div(
       class = paste("social-status", if (fout || heeft_content_warning) "social-status--warning" else "social-status--ok"),
@@ -2255,6 +2276,7 @@ server <- function(input, output, session) {
     volgers_nu <- laatste_volgers(social_daily(), grenzen$end)
     volgers_start <- laatste_volgers(social_daily(), grenzen$start - 1)
     volgers_groei <- if (is.na(volgers_nu) || is.na(volgers_start)) NA_real_ else volgers_nu - volgers_start
+    is_instagram <- identical(input$social_platform, "instagram")
     views_nu <- social_sum(huidig$media_views)
     views_vorig <- social_sum(vorig$media_views)
     interacties_nu <- social_sum(huidig$post_engagements)
@@ -2269,7 +2291,7 @@ server <- function(input, output, session) {
         if (is.na(volgers_groei)) "Niet beschikbaar" else paste0(if (volgers_groei > 0) "+" else "", social_number(volgers_groei)),
         subtitel = if (is.na(volgers_groei)) "Meta leverde geen oudere meting" else "binnen geselecteerde periode"
       ),
-      kpi_card("Totaal aantal weergaven", social_number(views_nu), views_delta$class, views_delta$label, "t.o.v. vorige gelijke periode"),
+      kpi_card(if (is_instagram) "Totaal dagelijks bereik" else "Totaal aantal weergaven", social_number(views_nu), views_delta$class, views_delta$label, "t.o.v. vorige gelijke periode"),
       kpi_card("Totaal aantal interacties", social_number(interacties_nu), subtitel = "dagtotalen binnen periode"),
       kpi_card("Interactieontwikkeling", interacties_delta$label %||% "Niet beschikbaar", interacties_delta$class, interacties_delta$label, "t.o.v. vorige gelijke periode")
     )
@@ -2284,7 +2306,7 @@ server <- function(input, output, session) {
   output$social_views_plot <- renderPlotly({
     df <- social_current_daily() |> filter(!is.na(media_views))
     if (!nrow(df)) return(maak_leeg_plot())
-    maak_lijn_plot(df, "metric_date", "media_views", "Weergaven")
+    maak_lijn_plot(df, "metric_date", "media_views", if (identical(input$social_platform, "instagram")) "Bereik" else "Weergaven")
   })
 
   output$social_engagement_plot <- renderPlotly({
@@ -2317,7 +2339,7 @@ server <- function(input, output, session) {
       if (is.na(post_type) || !nzchar(post_type)) post_type <- "onbekend"
       div(
         class = "social-post-card",
-        if (!is.na(post$picture_url) && nzchar(post$picture_url)) tags$img(src = post$picture_url, alt = "Afbeelding bij Facebook-bericht", loading = "lazy"),
+        if (!is.na(post$picture_url) && nzchar(post$picture_url)) tags$img(src = post$picture_url, alt = "Afbeelding bij socialmediabericht", loading = "lazy"),
         div(
           class = "social-post-card__body",
           div(class = "social-post-card__meta", format(post$publicatiedatum, "%d-%m-%Y"), " · ", tools::toTitleCase(post_type)),

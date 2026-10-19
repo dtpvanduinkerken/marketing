@@ -74,6 +74,7 @@ meta_parse_insights <- function(response, timezone = "Europe/Amsterdam") {
           media_views = NA_real_,
           post_engagements = NA_real_,
           followers_count = NA_real_,
+          follower_change = NA_real_,
           source_end_time = meta_epoch(waarde$end_time)
         )
       }
@@ -89,6 +90,7 @@ meta_parse_insights <- function(response, timezone = "Europe/Amsterdam") {
     media_views = x$media_views,
     post_engagements = x$post_engagements,
     followers_count = x$followers_count,
+    follower_change = x$follower_change,
     source_end_time = as.POSIXct(x$source_end_time, origin = "1970-01-01", tz = "UTC")
   )))
 }
@@ -217,7 +219,144 @@ meta_token_status <- function(cfg) {
 
 social_error_message <- function(e) {
   tekst <- conditionMessage(e)
-  tekst <- gsub("EA[A-Za-z0-9]+", "[TOKEN VERWIJDERD]", tekst)
+  tekst <- gsub("(EA|IG)[A-Za-z0-9_-]+", "[TOKEN VERWIJDERD]", tekst)
   substr(tekst, 1, 1000)
+}
+
+instagram_config <- function() {
+  api_version <- Sys.getenv("INSTAGRAM_API_VERSION", unset = "")
+  if (!nzchar(api_version)) api_version <- "v26.0"
+  lookback <- Sys.getenv("INSTAGRAM_POSTS_LOOKBACK_DAYS", unset = "")
+  if (!nzchar(lookback)) lookback <- "180"
+  post_limit <- Sys.getenv("INSTAGRAM_POST_LIMIT", unset = "")
+  if (!nzchar(post_limit)) post_limit <- "30"
+  cfg <- list(
+    account_id = Sys.getenv("INSTAGRAM_ACCOUNT_ID"),
+    access_token = Sys.getenv("INSTAGRAM_ACCESS_TOKEN"),
+    api_version = api_version,
+    app_id = Sys.getenv("INSTAGRAM_APP_ID"),
+    app_secret = Sys.getenv("INSTAGRAM_APP_SECRET"),
+    timezone = Sys.getenv("SOCIAL_TIMEZONE", unset = "Europe/Amsterdam"),
+    posts_lookback_days = as.integer(lookback),
+    post_limit = as.integer(post_limit)
+  )
+  if (!grepl("^v[0-9]+\\.[0-9]+$", cfg$api_version)) stop("Ongeldige INSTAGRAM_API_VERSION.")
+  if (!nzchar(cfg$access_token)) stop("INSTAGRAM_ACCESS_TOKEN ontbreekt.")
+  cfg
+}
+
+instagram_graph_request <- function(path, query = list(), cfg = instagram_config()) {
+  url <- paste0("https://graph.instagram.com/", cfg$api_version, "/", sub("^/", "", path))
+  response <- request(url) |>
+    req_auth_bearer_token(cfg$access_token) |>
+    req_url_query(!!!query) |>
+    req_user_agent("VanDuinkerkenSocialDashboard/1.0") |>
+    req_retry(max_tries = 4, backoff = ~ min(30, 2 ^ .x)) |>
+    req_timeout(60) |>
+    req_error(is_error = function(resp) FALSE) |>
+    req_perform()
+  body <- resp_body_json(response, simplifyVector = FALSE)
+  if (resp_status(response) >= 400 || !is.null(body$error)) {
+    err <- body$error %||% list()
+    condition <- structure(
+      list(
+        message = as.character(err$message %||% "Onbekende Instagram API-fout"),
+        call = NULL,
+        code = as.character(err$code %||% resp_status(response)),
+        subcode = err$error_subcode %||% NULL
+      ),
+      class = c("instagram_api_error", "error", "condition")
+    )
+    stop(condition)
+  }
+  body
+}
+
+instagram_fetch_profile <- function(cfg) {
+  path <- if (nzchar(cfg$account_id)) cfg$account_id else "me"
+  instagram_graph_request(
+    path,
+    list(fields = paste(
+      "id", "user_id", "username", "name", "account_type",
+      "profile_picture_url", "followers_count", "follows_count", "media_count",
+      sep = ","
+    )),
+    cfg
+  )
+}
+
+instagram_fetch_reach_history <- function(cfg, account_id, since, until) {
+  tryCatch(
+    instagram_graph_request(
+      paste0(account_id, "/insights"),
+      list(
+        metric = "reach", period = "day", metric_type = "time_series",
+        since = format(as.Date(since), "%Y-%m-%d"),
+        until = format(as.Date(until) + 1, "%Y-%m-%d")
+      ),
+      cfg
+    ),
+    instagram_api_error = function(e) list(data = list())
+  )
+}
+
+instagram_parse_reach_history <- function(response, timezone = "Europe/Amsterdam") {
+  data <- response$data %||% list()
+  metric <- if (length(data)) data[[1]] else list()
+  values <- metric$values %||% list()
+  if (!length(values)) return(data.frame())
+  do.call(rbind, lapply(values, function(x) data.frame(
+    metric_date = meta_metric_date(x$end_time, timezone),
+    media_views = suppressWarnings(as.numeric(x$value %||% NA_real_)),
+    post_engagements = NA_real_, followers_count = NA_real_, follower_change = NA_real_,
+    source_end_time = meta_epoch(x$end_time)
+  )))
+}
+
+instagram_fetch_media <- function(cfg, account_id) {
+  response <- instagram_graph_request(
+    paste0(account_id, "/media"),
+    list(
+      fields = paste(
+        "id", "caption", "media_type", "media_product_type", "media_url",
+        "thumbnail_url", "permalink", "timestamp", "like_count", "comments_count",
+        sep = ","
+      ),
+      limit = min(100L, cfg$post_limit)
+    ),
+    cfg
+  )
+  media <- response$data %||% list()
+  next_url <- (response$paging %||% list())[["next"]] %||% ""
+  while (nzchar(next_url) && length(media) < cfg$post_limit) {
+    volgende <- request(next_url) |>
+      req_auth_bearer_token(cfg$access_token) |>
+      req_user_agent("VanDuinkerkenSocialDashboard/1.0") |>
+      req_retry(max_tries = 4) |>
+      req_timeout(60) |>
+      req_perform() |>
+      resp_body_json(simplifyVector = FALSE)
+    media <- c(media, volgende$data %||% list())
+    next_url <- (volgende$paging %||% list())[["next"]] %||% ""
+  }
+  head(media, cfg$post_limit)
+}
+
+instagram_insight_number <- function(response) {
+  data <- response$data %||% list()
+  metric <- if (length(data)) data[[1]] else list()
+  total <- (metric$total_value %||% list())$value %||% NULL
+  if (!is.null(total)) return(suppressWarnings(as.numeric(total)))
+  values <- metric$values %||% list()
+  if (!length(values)) return(NA_real_)
+  suppressWarnings(as.numeric(values[[1]]$value %||% NA_real_))
+}
+
+instagram_fetch_media_metric <- function(media_id, metric, cfg) {
+  tryCatch(
+    instagram_graph_request(paste0(media_id, "/insights"), list(metric = metric), cfg) |>
+      instagram_insight_number(),
+    instagram_api_error = function(e) NA_real_
+  )
 }
 

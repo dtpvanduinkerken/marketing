@@ -1,6 +1,6 @@
 # Social Media-koppeling zonder extra database
 
-Het dashboard haalt Facebook-statistieken rechtstreeks op uit de Meta Graph API. Er is geen Aiven-, MySQL- of betaalde cronservice nodig. De gegevens worden maximaal twintig uur in het geheugen van de bestaande Render-webservice bewaard om onnodige API-aanvragen te voorkomen.
+Het dashboard haalt Facebook- en Instagram-statistieken rechtstreeks op uit de officiële API's van Meta. Er is geen Aiven-, MySQL- of betaalde cronservice nodig. De gegevens worden maximaal twintig uur in het geheugen van de bestaande Render-webservice bewaard om onnodige API-aanvragen te voorkomen.
 
 ## Environment variables in Render
 
@@ -15,8 +15,17 @@ Voeg aan de bestaande dashboard-webservice uitsluitend deze variabelen toe:
 | `META_APP_SECRET` | App secret |
 | `FACEBOOK_POSTS_LOOKBACK_DAYS` | Optioneel, standaard `180` |
 | `FACEBOOK_POST_LIMIT` | Optioneel, standaard `30` |
+| `INSTAGRAM_ACCESS_TOKEN` | Token uit **API setup with Instagram login** |
+| `INSTAGRAM_APP_ID` | Instagram App ID uit dezelfde Meta-pagina |
+| `INSTAGRAM_APP_SECRET` | Instagram App Secret uit dezelfde Meta-pagina |
+| `INSTAGRAM_ACCOUNT_ID` | Optioneel; zonder deze variabele wordt het account via `/me` bepaald |
+| `INSTAGRAM_API_VERSION` | Optioneel, standaard `v26.0` |
+| `INSTAGRAM_POSTS_LOOKBACK_DAYS` | Optioneel, standaard `180` |
+| `INSTAGRAM_POST_LIMIT` | Optioneel, standaard `30` |
 
 Sla de wijzigingen in Render op en herstart of deploy de bestaande webservice. Er zijn geen `SOCIAL_DB_*`-variabelen nodig.
+
+Voor Instagram Login zijn minimaal `instagram_business_basic` en `instagram_business_manage_insights` nodig. Het Instagram-account moet een professioneel Business- of Creator-account zijn. De koppeling gebruikt `graph.instagram.com` en vereist geen Business Portfolio of gekoppelde Facebook-pagina.
 
 ## Token en rechten
 
