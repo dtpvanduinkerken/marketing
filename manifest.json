@@ -2701,7 +2701,7 @@
       "checksum": "d41d8cd98f00b204e9800998ecf8427e"
     },
     ".Rprofile": {
-      "checksum": "2760ecffe666f64390a674f9e058ec68"
+      "checksum": "582b3fbf9addd3b8f9bb51435f097eed"
     },
     "app_desktop.R": {
       "checksum": "61e5ab6b07751866c3b4b0d276b26ca9"
@@ -3013,13 +3013,13 @@
       "checksum": "68bcae3a2bc05b3648487c34385be830"
     },
     "social_dashboard.R": {
-      "checksum": "7dffdae1e436a099d9c7103b1a668cf3"
+      "checksum": "e729c9754d8e38f813d3bb321b5ed54b"
     },
     "SOCIAL_MEDIA_SETUP.md": {
-      "checksum": "2299f0fb76d2c2b9508736fbbcd6e020"
+      "checksum": "84244a27bc7e8b953de3e8f696abfc98"
     },
     "social_sync.R": {
-      "checksum": "c7967e917a00e7007b36c856f3b831a6"
+      "checksum": "86f3471ffcaf69e232504a6284858f44"
     },
     "sql/mart/coupon_kpis.sql": {
       "checksum": "d479032886e58d5e94517dc309a6ee26"

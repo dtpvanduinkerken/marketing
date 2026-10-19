@@ -5,7 +5,10 @@ source("social_sync.R")
 .social_api_cache$loaded_at <- as.POSIXct(NA)
 
 leeg_social_live <- function(message = "Live Facebook-data is nog niet beschikbaar.") {
-  list(available = FALSE, message = message, daily = data.frame(), posts = data.frame(), sync = data.frame())
+  list(
+    available = FALSE, message = message, content_warning = NULL,
+    daily = data.frame(), posts = data.frame(), sync = data.frame()
+  )
 }
 
 empty_social_posts <- function() {
@@ -22,8 +25,8 @@ social_posts_from_api <- function(raw_posts, cfg, captured_date = Sys.Date()) {
   if (!length(raw_posts)) return(empty_social_posts())
   rows <- lapply(raw_posts, function(post) {
     insight <- meta_fetch_post_insights(post$id, cfg)
-    likes <- meta_summary_count(post$reactions %||% list())
-    comments <- meta_summary_count(post$comments %||% list())
+    likes <- if (is.null(post$reactions)) NA_real_ else meta_summary_count(post$reactions)
+    comments <- if (is.null(post$comments)) NA_real_ else meta_summary_count(post$comments)
     shares <- suppressWarnings(as.numeric(post$shares$count %||% NA_real_))
     reactions_total <- insight$reactions_total
     reactions_for_total <- if (is.na(reactions_total)) likes else reactions_total
@@ -78,7 +81,17 @@ fetch_social_live_api <- function(today = Sys.Date()) {
   daily$fan_count[today_index] <- suppressWarnings(as.numeric(page$fan_count %||% NA_real_))
   daily <- daily[order(daily$metric_date), , drop = FALSE]
 
-  raw_posts <- meta_fetch_posts(cfg, today - cfg$posts_lookback_days)
+  content_warning <- NULL
+  raw_posts <- tryCatch(
+    meta_fetch_posts(cfg, today - cfg$posts_lookback_days),
+    meta_api_error = function(e) {
+      content_warning <<- paste(
+        "Facebook-berichten zijn niet beschikbaar met de huidige Meta-rechten.",
+        "Volgers, weergaven en interacties worden wel geladen."
+      )
+      list()
+    }
+  )
   posts <- social_posts_from_api(raw_posts, cfg, today)
   sync <- data.frame(
     platform = "facebook", account_external_id = cfg$page_id,
@@ -86,7 +99,10 @@ fetch_social_live_api <- function(today = Sys.Date()) {
     daily_rows = nrow(daily), post_rows = nrow(posts),
     error_code = NA_character_, error_message = NA_character_
   )
-  list(available = TRUE, message = NULL, daily = daily, posts = posts, sync = sync)
+  list(
+    available = TRUE, message = NULL, content_warning = content_warning,
+    daily = daily, posts = posts, sync = sync
+  )
 }
 
 load_social_live_data <- function(cache_hours = 20) {

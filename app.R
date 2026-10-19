@@ -2232,10 +2232,16 @@ server <- function(input, output, session) {
       format(as.POSIXct(laatste_succes$finished_at, tz = "UTC"), "%d-%m-%Y %H:%M", tz = "Europe/Amsterdam")
     } else "onbekend"
     fout <- !is.null(laatste) && identical(laatste$status[1], "error")
+    content_warning <- data$social_live$content_warning %||% ""
+    heeft_content_warning <- nzchar(content_warning)
     div(
-      class = paste("social-status", if (fout) "social-status--warning" else "social-status--ok"),
-      icon(if (fout) "triangle-exclamation" else "circle-check"),
-      paste0("Laatst bijgewerkt: ", bijgewerkt, if (fout) ". De laatste synchronisatie mislukte; eerder opgeslagen cijfers blijven zichtbaar." else ".")
+      class = paste("social-status", if (fout || heeft_content_warning) "social-status--warning" else "social-status--ok"),
+      icon(if (fout || heeft_content_warning) "triangle-exclamation" else "circle-check"),
+      paste0(
+        "Laatst bijgewerkt: ", bijgewerkt,
+        if (fout) ". De laatste synchronisatie mislukte; eerder opgeslagen cijfers blijven zichtbaar." else ".",
+        if (heeft_content_warning) paste0(" ", content_warning) else ""
+      )
     )
   })
 

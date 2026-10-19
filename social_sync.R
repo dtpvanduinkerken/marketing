@@ -120,8 +120,7 @@ meta_fetch_posts <- function(cfg, since) {
   query <- list(
     fields = paste(
       "id", "message", "created_time", "permalink_url", "full_picture",
-      "attachments{media_type,type}", "shares", "comments.limit(0).summary(true)",
-      "reactions.type(LIKE).limit(0).summary(true)", sep = ","
+      "attachments{media_type,type}", sep = ","
     ),
     since = format(as.Date(since), "%Y-%m-%d"),
     limit = min(100L, cfg$post_limit)

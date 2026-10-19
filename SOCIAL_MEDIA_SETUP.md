@@ -34,6 +34,8 @@ De app-ID en app-secret worden gebruikt om de geldigheid van het token te contro
 - Het actuele volgersaantal komt rechtstreeks van de pagina.
 - Meta levert via deze koppeling geen betrouwbare historische reeks van dagelijkse volgersmomenten. Daarom toont het dashboard geen verzonnen volgersgroei.
 - Berichtstatistieken worden live opgehaald voor maximaal het ingestelde aantal recente berichten.
+- Likes en opmerkingen worden alleen getoond als het token daarvoor toestemming heeft. Zonder `pages_read_user_content` blijven deze velden **Niet beschikbaar**; de rest van het dashboard blijft werken.
+- Als Meta ook de berichtenlijst blokkeert, slaat het dashboard dit onderdeel over. De beschikbare pagina-KPI's blijven dan zichtbaar met een waarschuwing bij de synchronisatiestatus.
 - Een herstart van Render wist alleen de tijdelijke cache. De cijfers worden daarna opnieuw bij Meta opgehaald.
 
 ## Controleren
