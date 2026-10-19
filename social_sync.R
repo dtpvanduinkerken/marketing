@@ -1,12 +1,13 @@
 library(httr2)
 library(jsonlite)
-source("social_database.R")
 
 meta_config <- function() {
   api_version <- Sys.getenv("FACEBOOK_API_VERSION", unset = "")
   if (!nzchar(api_version)) api_version <- "v26.0"
   lookback <- Sys.getenv("FACEBOOK_POSTS_LOOKBACK_DAYS", unset = "")
   if (!nzchar(lookback)) lookback <- "180"
+  post_limit <- Sys.getenv("FACEBOOK_POST_LIMIT", unset = "")
+  if (!nzchar(post_limit)) post_limit <- "30"
   cfg <- list(
     page_id = Sys.getenv("FACEBOOK_PAGE_ID", unset = "135617146515071"),
     access_token = Sys.getenv("FACEBOOK_ACCESS_TOKEN"),
@@ -14,7 +15,8 @@ meta_config <- function() {
     app_id = Sys.getenv("META_APP_ID"),
     app_secret = Sys.getenv("META_APP_SECRET"),
     timezone = Sys.getenv("SOCIAL_TIMEZONE", unset = "Europe/Amsterdam"),
-    posts_lookback_days = as.integer(lookback)
+    posts_lookback_days = as.integer(lookback),
+    post_limit = as.integer(post_limit)
   )
   if (!grepl("^v[0-9]+\\.[0-9]+$", cfg$api_version)) stop("Ongeldige FACEBOOK_API_VERSION.")
   if (!nzchar(cfg$page_id) || !grepl("^[0-9]+$", cfg$page_id)) stop("Ongeldige FACEBOOK_PAGE_ID.")
@@ -122,12 +124,12 @@ meta_fetch_posts <- function(cfg, since) {
       "reactions.type(LIKE).limit(0).summary(true)", sep = ","
     ),
     since = format(as.Date(since), "%Y-%m-%d"),
-    limit = 100
+    limit = min(100L, cfg$post_limit)
   )
   response <- meta_graph_request(paste0(cfg$page_id, "/posts"), query, cfg)
   posts <- response$data %||% list()
   next_url <- (response$paging %||% list())[["next"]] %||% ""
-  while (nzchar(next_url) && length(posts) < 1000) {
+  while (nzchar(next_url) && length(posts) < cfg$post_limit) {
     volgende <- request(next_url) |>
       req_user_agent("VanDuinkerkenSocialDashboard/1.0") |>
       req_retry(max_tries = 4) |>
@@ -137,7 +139,7 @@ meta_fetch_posts <- function(cfg, since) {
     posts <- c(posts, volgende$data %||% list())
     next_url <- (volgende$paging %||% list())[["next"]] %||% ""
   }
-  posts
+  head(posts, cfg$post_limit)
 }
 
 meta_post_type <- function(post) {
@@ -191,125 +193,5 @@ social_error_message <- function(e) {
   tekst <- conditionMessage(e)
   tekst <- gsub("EA[A-Za-z0-9]+", "[TOKEN VERWIJDERD]", tekst)
   substr(tekst, 1, 1000)
-}
-
-sync_facebook <- function(con = NULL, cfg = meta_config(), today = Sys.Date()) {
-  eigen_con <- is.null(con)
-  if (eigen_con) con <- social_db_connect()
-  if (eigen_con) on.exit(DBI::dbDisconnect(con), add = TRUE)
-  apply_social_migrations(con)
-
-  start <- Sys.time()
-  log_id <- DBI::dbGetQuery(con, "SELECT 0 AS id")$id[1]
-  DBI::dbExecute(con, paste(
-    "INSERT INTO social_sync_logs",
-    "(platform, account_external_id, started_at, status)",
-    "VALUES ('facebook', ?, ?, 'running')"
-  ), params = list(cfg$page_id, format(start, "%Y-%m-%d %H:%M:%S")))
-  log_id <- DBI::dbGetQuery(con, "SELECT LAST_INSERT_ID() AS id")$id[1]
-
-  dagelijkse_rijen <- 0L
-  post_rijen <- 0L
-  tryCatch({
-    token_info <- meta_token_status(cfg)
-    if (!is.null(token_info) && !isTRUE(token_info$is_valid)) stop("Het Meta-toegangstoken is ongeldig of verlopen.")
-
-    page <- meta_fetch_page(cfg)
-    social_db_upsert(con, paste(
-      "INSERT INTO social_accounts (platform, external_account_id, account_name, account_timezone)",
-      "VALUES ('facebook', ?, ?, ?)",
-      "ON DUPLICATE KEY UPDATE account_name=VALUES(account_name), account_timezone=VALUES(account_timezone), is_active=1"
-    ), c(page$id, page$name, cfg$timezone))
-    account_id <- DBI::dbGetQuery(con,
-      "SELECT id FROM social_accounts WHERE platform='facebook' AND external_account_id=?",
-      params = list(cfg$page_id)
-    )$id[1]
-
-    laatste <- DBI::dbGetQuery(con,
-      "SELECT MAX(metric_date) AS laatste FROM social_daily_stats WHERE account_id=?",
-      params = list(account_id)
-    )$laatste[1]
-    since <- if (is.na(laatste)) today - 729 else max(as.Date(laatste) - 7, today - 729)
-    daily <- meta_fetch_daily_insights(cfg, since, today)
-
-    DBI::dbBegin(con)
-    if (nrow(daily)) {
-      for (i in seq_len(nrow(daily))) {
-        social_db_upsert(con, paste(
-          "INSERT INTO social_daily_stats",
-          "(account_id, metric_date, media_views, post_engagements, metric_period, source_end_time, collected_at)",
-          "VALUES (?, ?, ?, ?, 'day', ?, CURRENT_TIMESTAMP)",
-          "ON DUPLICATE KEY UPDATE media_views=VALUES(media_views), post_engagements=VALUES(post_engagements),",
-          "source_end_time=VALUES(source_end_time), collected_at=CURRENT_TIMESTAMP"
-        ), list(
-          account_id, format(daily$metric_date[i], "%Y-%m-%d"), daily$media_views[i],
-          daily$post_engagements[i], format(daily$source_end_time[i], "%Y-%m-%d %H:%M:%S", tz = "UTC")
-        ))
-      }
-      dagelijkse_rijen <- nrow(daily)
-    }
-    social_db_upsert(con, paste(
-      "INSERT INTO social_daily_stats",
-      "(account_id, metric_date, followers_count, fan_count, metric_period, collected_at)",
-      "VALUES (?, ?, ?, ?, 'snapshot', CURRENT_TIMESTAMP)",
-      "ON DUPLICATE KEY UPDATE followers_count=VALUES(followers_count), fan_count=VALUES(fan_count), collected_at=CURRENT_TIMESTAMP"
-    ), list(account_id, format(today, "%Y-%m-%d"), page$followers_count %||% NA, page$fan_count %||% NA))
-
-    posts <- meta_fetch_posts(cfg, today - cfg$posts_lookback_days)
-    if (length(posts)) {
-      for (post in posts) {
-        published <- meta_epoch(post$created_time)
-        social_db_upsert(con, paste(
-          "INSERT INTO social_posts",
-          "(account_id, external_post_id, post_type, message, permalink_url, picture_url, published_at)",
-          "VALUES (?, ?, ?, ?, ?, ?, ?)",
-          "ON DUPLICATE KEY UPDATE post_type=VALUES(post_type), message=VALUES(message),",
-          "permalink_url=VALUES(permalink_url), picture_url=VALUES(picture_url), published_at=VALUES(published_at)"
-        ), list(
-          account_id, post$id, meta_post_type(post), post$message %||% NA,
-          post$permalink_url %||% NA, post$full_picture %||% NA,
-          format(published, "%Y-%m-%d %H:%M:%S", tz = "UTC")
-        ))
-        post_id <- DBI::dbGetQuery(con,
-          "SELECT id FROM social_posts WHERE account_id=? AND external_post_id=?",
-          params = list(account_id, post$id)
-        )$id[1]
-        insight <- meta_fetch_post_insights(post$id, cfg)
-        likes <- meta_summary_count(post$reactions %||% list())
-        comments <- meta_summary_count(post$comments %||% list())
-        shares <- suppressWarnings(as.numeric(post$shares$count %||% NA_real_))
-        reactions_for_total <- if (is.na(insight$reactions_total)) likes else insight$reactions_total
-        engagement <- if (all(is.na(c(reactions_for_total, comments, shares)))) {
-          NA_real_
-        } else {
-          sum(c(reactions_for_total, comments, shares), na.rm = TRUE)
-        }
-        social_db_upsert(con, paste(
-          "INSERT INTO social_post_stats",
-          "(post_id, captured_date, media_views, likes, reactions_total, comments, shares, engagement_total, collected_at)",
-          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)",
-          "ON DUPLICATE KEY UPDATE media_views=VALUES(media_views), likes=VALUES(likes),",
-          "reactions_total=VALUES(reactions_total), comments=VALUES(comments), shares=VALUES(shares),",
-          "engagement_total=VALUES(engagement_total), collected_at=CURRENT_TIMESTAMP"
-        ), list(
-          post_id, format(today, "%Y-%m-%d"), insight$media_views, likes,
-          insight$reactions_total, comments, shares, engagement
-        ))
-      }
-      post_rijen <- length(posts)
-    }
-    DBI::dbCommit(con)
-    DBI::dbExecute(con, paste(
-      "UPDATE social_sync_logs SET finished_at=?, status='success', daily_rows=?, post_rows=? WHERE id=?"
-    ), params = list(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), dagelijkse_rijen, post_rijen, log_id))
-    list(daily_rows = dagelijkse_rijen, post_rows = post_rijen)
-  }, error = function(e) {
-    if (DBI::dbIsValid(con)) try(DBI::dbRollback(con), silent = TRUE)
-    code <- if (inherits(e, "meta_api_error")) e$code else class(e)[1]
-    DBI::dbExecute(con, paste(
-      "UPDATE social_sync_logs SET finished_at=?, status='error', error_code=?, error_message=? WHERE id=?"
-    ), params = list(format(Sys.time(), "%Y-%m-%d %H:%M:%S"), code, social_error_message(e), log_id))
-    stop(e)
-  })
 }
 

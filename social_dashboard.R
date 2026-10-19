@@ -1,60 +1,108 @@
-source("social_database.R")
+source("social_sync.R")
+
+.social_api_cache <- new.env(parent = emptyenv())
+.social_api_cache$value <- NULL
+.social_api_cache$loaded_at <- as.POSIXct(NA)
 
 leeg_social_live <- function(message = "Live Facebook-data is nog niet beschikbaar.") {
-  list(
-    available = FALSE,
-    message = message,
-    daily = data.frame(),
-    posts = data.frame(),
-    sync = data.frame()
+  list(available = FALSE, message = message, daily = data.frame(), posts = data.frame(), sync = data.frame())
+}
+
+empty_social_posts <- function() {
+  data.frame(
+    platform = character(), external_post_id = character(), post_type = character(),
+    message = character(), permalink_url = character(), picture_url = character(),
+    published_at = as.POSIXct(character(), tz = "UTC"), captured_date = as.Date(character()),
+    media_views = numeric(), likes = numeric(), reactions_total = numeric(), comments = numeric(),
+    shares = numeric(), engagement_total = numeric(), collected_at = as.POSIXct(character(), tz = "UTC")
   )
 }
 
-load_social_live_data <- function() {
-  if (!social_db_configured()) return(leeg_social_live("De Aiven MySQL-verbinding is niet ingesteld."))
-  con <- social_db_connect()
-  on.exit(DBI::dbDisconnect(con), add = TRUE)
-  vereist <- c("social_accounts", "social_daily_stats", "social_posts", "social_post_stats", "social_sync_logs")
-  ontbrekend <- setdiff(vereist, DBI::dbListTables(con))
-  if (length(ontbrekend)) {
-    return(leeg_social_live("De Social Media-databasemigratie is nog niet uitgevoerd."))
-  }
+social_posts_from_api <- function(raw_posts, cfg, captured_date = Sys.Date()) {
+  if (!length(raw_posts)) return(empty_social_posts())
+  rows <- lapply(raw_posts, function(post) {
+    insight <- meta_fetch_post_insights(post$id, cfg)
+    likes <- meta_summary_count(post$reactions %||% list())
+    comments <- meta_summary_count(post$comments %||% list())
+    shares <- suppressWarnings(as.numeric(post$shares$count %||% NA_real_))
+    reactions_total <- insight$reactions_total
+    reactions_for_total <- if (is.na(reactions_total)) likes else reactions_total
+    engagement <- if (all(is.na(c(reactions_for_total, comments, shares)))) NA_real_ else
+      sum(c(reactions_for_total, comments, shares), na.rm = TRUE)
+    data.frame(
+      platform = "facebook", external_post_id = as.character(post$id),
+      post_type = meta_post_type(post), message = as.character(post$message %||% NA_character_),
+      permalink_url = as.character(post$permalink_url %||% NA_character_),
+      picture_url = as.character(post$full_picture %||% NA_character_),
+      published_at = meta_epoch(post$created_time), captured_date = as.Date(captured_date),
+      media_views = insight$media_views, likes = likes, reactions_total = reactions_total,
+      comments = comments, shares = shares, engagement_total = engagement,
+      collected_at = Sys.time(), stringsAsFactors = FALSE
+    )
+  })
+  do.call(rbind, rows)
+}
 
-  daily <- DBI::dbGetQuery(con, paste(
-    "SELECT a.platform, a.external_account_id, a.account_name, a.account_timezone,",
-    "d.metric_date, d.followers_count, d.fan_count, d.media_views, d.post_engagements,",
-    "d.source_end_time, d.collected_at",
-    "FROM social_accounts a JOIN social_daily_stats d ON d.account_id=a.id",
-    "WHERE a.is_active=1 ORDER BY d.metric_date"
-  ))
-  posts <- DBI::dbGetQuery(con, paste(
-    "SELECT a.platform, p.external_post_id, p.post_type, p.message, p.permalink_url,",
-    "p.picture_url, p.published_at, s.captured_date, s.media_views, s.likes,",
-    "s.reactions_total, s.comments, s.shares, s.engagement_total, s.collected_at",
-    "FROM social_accounts a JOIN social_posts p ON p.account_id=a.id",
-    "LEFT JOIN social_post_stats s ON s.post_id=p.id",
-    "AND NOT EXISTS (SELECT 1 FROM social_post_stats newer",
-    "WHERE newer.post_id=s.post_id AND (newer.captured_date>s.captured_date",
-    "OR (newer.captured_date=s.captured_date AND newer.collected_at>s.collected_at)))",
-    "WHERE a.is_active=1 ORDER BY p.published_at DESC"
-  ))
-  sync <- DBI::dbGetQuery(con, paste(
-    "SELECT platform, account_external_id, started_at, finished_at, status,",
-    "daily_rows, post_rows, error_code, error_message",
-    "FROM social_sync_logs ORDER BY started_at DESC LIMIT 20"
-  ))
-  if (nrow(daily)) daily$metric_date <- as.Date(daily$metric_date)
-  if (nrow(posts)) {
-    posts$published_at <- as.POSIXct(posts$published_at, tz = "UTC")
-    posts$captured_date <- as.Date(posts$captured_date)
+fetch_social_live_api <- function(today = Sys.Date()) {
+  cfg <- meta_config()
+  token_info <- meta_token_status(cfg)
+  if (!is.null(token_info) && !isTRUE(token_info$is_valid)) stop("Het Meta-toegangstoken is ongeldig of verlopen.")
+
+  fetched_at <- Sys.time()
+  page <- meta_fetch_page(cfg)
+  daily <- meta_fetch_daily_insights(cfg, today - 729, today)
+  if (!nrow(daily)) {
+    daily <- data.frame(metric_date = as.Date(today), media_views = NA_real_,
+                        post_engagements = NA_real_, source_end_time = as.POSIXct(NA))
   }
-  list(available = nrow(daily) > 0, message = NULL, daily = daily, posts = posts, sync = sync)
+  daily$platform <- "facebook"
+  daily$external_account_id <- as.character(page$id)
+  daily$account_name <- as.character(page$name)
+  daily$account_timezone <- cfg$timezone
+  daily$followers_count <- NA_real_
+  daily$fan_count <- NA_real_
+  daily$collected_at <- fetched_at
+
+  today_index <- which(daily$metric_date == as.Date(today))
+  if (!length(today_index)) {
+    daily <- rbind(daily, data.frame(
+      metric_date = as.Date(today), media_views = NA_real_, post_engagements = NA_real_,
+      source_end_time = as.POSIXct(NA), platform = "facebook",
+      external_account_id = as.character(page$id), account_name = as.character(page$name),
+      account_timezone = cfg$timezone, followers_count = NA_real_, fan_count = NA_real_,
+      collected_at = fetched_at
+    ))
+    today_index <- nrow(daily)
+  }
+  daily$followers_count[today_index] <- suppressWarnings(as.numeric(page$followers_count %||% NA_real_))
+  daily$fan_count[today_index] <- suppressWarnings(as.numeric(page$fan_count %||% NA_real_))
+  daily <- daily[order(daily$metric_date), , drop = FALSE]
+
+  raw_posts <- meta_fetch_posts(cfg, today - cfg$posts_lookback_days)
+  posts <- social_posts_from_api(raw_posts, cfg, today)
+  sync <- data.frame(
+    platform = "facebook", account_external_id = cfg$page_id,
+    started_at = fetched_at, finished_at = Sys.time(), status = "success",
+    daily_rows = nrow(daily), post_rows = nrow(posts),
+    error_code = NA_character_, error_message = NA_character_
+  )
+  list(available = TRUE, message = NULL, daily = daily, posts = posts, sync = sync)
+}
+
+load_social_live_data <- function(cache_hours = 20) {
+  cache_valid <- !is.null(.social_api_cache$value) && !is.na(.social_api_cache$loaded_at) &&
+    difftime(Sys.time(), .social_api_cache$loaded_at, units = "hours") < cache_hours
+  if (isTRUE(cache_valid)) return(.social_api_cache$value)
+  result <- fetch_social_live_api()
+  .social_api_cache$value <- result
+  .social_api_cache$loaded_at <- Sys.time()
+  result
 }
 
 hydrate_social_dashboard <- function(data) {
   data$social_live <- tryCatch(
     load_social_live_data(),
-    error = function(e) leeg_social_live(paste("Live Facebook-data kon niet worden geladen:", conditionMessage(e)))
+    error = function(e) leeg_social_live(paste("Live Facebook-data kon niet worden geladen:", social_error_message(e)))
   )
   data
 }
@@ -66,10 +114,6 @@ social_number <- function(x) {
 social_delta <- function(current, previous) {
   if (is.na(current) || is.na(previous) || previous == 0) return(list(value = NA_real_, label = NULL, class = NULL))
   pct <- round((current - previous) / previous * 100, 1)
-  list(
-    value = pct,
-    label = paste0(if (pct > 0) "+" else "", format(pct, decimal.mark = ","), "%"),
-    class = if (pct > 0) "kpi-trend-up" else if (pct < 0) "kpi-trend-down" else NULL
-  )
+  list(value = pct, label = paste0(if (pct > 0) "+" else "", format(pct, decimal.mark = ","), "%"),
+       class = if (pct > 0) "kpi-trend-up" else if (pct < 0) "kpi-trend-down" else NULL)
 }
-
