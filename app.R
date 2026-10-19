@@ -8,6 +8,10 @@ library(googleAnalyticsR)
 
 if (file.exists("simplybook.R")) source("simplybook.R")
 if (file.exists("social_dashboard.R")) source("social_dashboard.R")
+if (file.exists("social_scheduler.R")) {
+  source("social_scheduler.R")
+  start_social_scheduler()
+}
 
 # --------------------------------------------------
 # CONSTANTEN

@@ -2930,13 +2930,13 @@
       "checksum": "d41d8cd98f00b204e9800998ecf8427e"
     },
     ".Rprofile": {
-      "checksum": "12ce1de60233d96a1572dda4bd440b3e"
+      "checksum": "5c1d9d9089bd292ae18eb198df7faed1"
     },
     "app_desktop.R": {
       "checksum": "61e5ab6b07751866c3b4b0d276b26ca9"
     },
     "app.R": {
-      "checksum": "9329ee8d970ba3057b4145adb37eb2d8"
+      "checksum": "17e71d5b1e11b6015e0c3885c0def0de"
     },
     "bedrijf.duckdb": {
       "checksum": "c31845c1256ec788e5a59872453ef61b"
@@ -3248,7 +3248,10 @@
       "checksum": "435c793ee1610c9ee344cbbd3f969738"
     },
     "SOCIAL_MEDIA_SETUP.md": {
-      "checksum": "c1a929ad1234aad4cde2e03e88bed20e"
+      "checksum": "84d5fb63c49f8a7db50249e0c2a1d4ec"
+    },
+    "social_scheduler.R": {
+      "checksum": "0640d757bb4b2d40840c1f25b40add30"
     },
     "social_sync.R": {
       "checksum": "dad0f236829881b900b55a98efa70305"

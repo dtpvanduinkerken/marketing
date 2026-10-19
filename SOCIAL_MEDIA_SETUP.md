@@ -1,18 +1,18 @@
 # Social Media-koppeling
 
-De Facebook-koppeling bestaat uit drie gescheiden onderdelen:
+De Facebook-koppeling bestaat uit drie onderdelen:
 
-1. `sync_social_media.R` haalt statistieken op uit de Meta Graph API.
+1. `social_scheduler.R` controleert vanuit de bestaande Render-webservice ieder uur of een synchronisatie nodig is; `sync_social_media.R` haalt de statistieken op.
 2. Aiven MySQL bewaart dagwaarden, berichten, metingen per bericht en synchronisatielogs.
 3. Het Shiny-dashboard leest de opgeslagen gegevens alleen. Een tijdelijke API-storing wist dus geen historische cijfers.
 
-De dagelijkse taak staat in `.github/workflows/social-media-sync.yml` en draait om 06:15 uur in `Europe/Amsterdam`, inclusief zomer- en wintertijd. De taak kan ook handmatig worden gestart via **GitHub → Actions → Social media synchroniseren → Run workflow**. Het dashboard hoeft daarvoor niet geopend te zijn.
+Er is geen extra betaalde Render Cron Job nodig. Bij een continu actieve webservice loopt de controle automatisch. Een gratis Render-webservice kan na inactiviteit slapen; zodra de service weer wordt gewekt, wordt een gemiste synchronisatie automatisch ingehaald. Render garandeert op het gratis webserviceplan daarom geen uitvoering op een exact dagelijks tijdstip.
 
 ## 1. Aiven MySQL
 
 Maak of gebruik een Aiven MySQL-service en noteer host, poort, database, gebruiker, wachtwoord en het CA-certificaat. De eerste synchronisatie voert `sql/mysql/001_social_media.sql` automatisch uit. De tabellen zijn voorbereid op meerdere platforms en accounts; momenteel wordt alleen Facebook getoond.
 
-Voeg deze geheimen toe aan de GitHub-repository via **Settings → Secrets and variables → Actions → Repository secrets**:
+Voeg deze variabelen toe aan de bestaande Render-webservice:
 
 | Naam | Inhoud |
 |---|---|
@@ -23,7 +23,7 @@ Voeg deze geheimen toe aan de GitHub-repository via **Settings → Secrets and v
 | `SOCIAL_DB_PASSWORD` | Aiven-wachtwoord |
 | `SOCIAL_DB_SSL_CA_PEM` | Volledige inhoud van het Aiven CA-certificaat |
 
-Zet dezelfde zes waarden als geheime environment variables in Posit Connect Cloud of Render. Alleen de GitHub-taak heeft het Meta-token nodig; het dashboard niet.
+Dezelfde Render-webservice gebruikt deze waarden voor zowel het dashboard als de synchronisatie.
 
 ## 2. Meta-token veilig vernieuwen
 
@@ -33,30 +33,29 @@ Gebruik voor de Facebook-pagina `135617146515071` een Page Access Token met mini
 - `pages_read_engagement`
 - de taak `ANALYZE` op de pagina
 
-Maak een nieuw gebruikerstoken via Meta Graph API Explorer onder de juiste Meta-app, wissel dit via de officiële OAuth-endpoint om voor een langlevend gebruikerstoken en vraag vervolgens `/me/accounts?fields=id,name,access_token,tasks` op. Bewaar het Page Access Token uit het antwoord als GitHub-secret `FACEBOOK_ACCESS_TOKEN`.
+Maak een nieuw gebruikerstoken via Meta Graph API Explorer onder de juiste Meta-app, wissel dit via de officiële OAuth-endpoint om voor een langlevend gebruikerstoken en vraag vervolgens `/me/accounts?fields=id,name,access_token,tasks` op. Bewaar het Page Access Token uitsluitend als Render environment variable `FACEBOOK_ACCESS_TOKEN`.
 
 Voeg daarnaast toe:
 
-| Naam | Type | Inhoud |
-|---|---|---|
-| `FACEBOOK_PAGE_ID` | GitHub secret | `135617146515071` |
-| `FACEBOOK_ACCESS_TOKEN` | GitHub secret | Nieuw Page Access Token |
-| `META_APP_ID` | GitHub secret | ID van de Meta-app |
-| `META_APP_SECRET` | GitHub secret | App secret |
-| `FACEBOOK_API_VERSION` | GitHub variable | `v26.0` |
+| Naam | Inhoud |
+|---|---|
+| `FACEBOOK_PAGE_ID` | `135617146515071` |
+| `FACEBOOK_ACCESS_TOKEN` | Nieuw Page Access Token |
+| `META_APP_ID` | ID van de Meta-app |
+| `META_APP_SECRET` | App secret |
+| `FACEBOOK_API_VERSION` | `v26.0` |
 
 De app-ID en app-secret worden alleen gebruikt om vóór de synchronisatie de geldigheid van het token te controleren. Zet tokens nooit in broncode, issues, screenshots of chatberichten. Trek een token dat ergens zichtbaar is geweest direct in en maak een nieuw token.
 
-Een Page Access Token uit een langlevend gebruikerstoken heeft niet dezelfde levenscyclusgarantie als een System User-token. Zonder Business Portfolio kan het onder andere ongeldig worden door een wachtwoordwijziging, ingetrokken app-toegang of gewijzigde paginarechten. Controleer daarom de synchronisatiestatus in het dashboard en vernieuw het token zodra de GitHub-taak een authenticatiefout meldt.
+Een Page Access Token uit een langlevend gebruikerstoken heeft niet dezelfde levenscyclusgarantie als een System User-token. Zonder Business Portfolio kan het onder andere ongeldig worden door een wachtwoordwijziging, ingetrokken app-toegang of gewijzigde paginarechten. Controleer daarom de synchronisatiestatus en de Render-log en vernieuw het token zodra daar een authenticatiefout verschijnt.
 
 ## 3. Eerste ingebruikname
 
-1. Voeg alle GitHub-secrets en de API-versie toe.
-2. Start de workflow één keer handmatig.
-3. Controleer in de workflowlog alleen de aantallen; er hoort nooit een token te worden afgedrukt.
+1. Voeg alle Meta- en Aiven-variabelen toe aan de bestaande Render-webservice.
+2. Publiceer of herstart de webservice. De eerste controle start ongeveer dertig seconden na het opstarten.
+3. Controleer in de Render-log alleen de aantallen; er hoort nooit een token te worden afgedrukt.
 4. Controleer in Aiven of de vijf `social_*`-tabellen zijn aangemaakt.
-5. Voeg de Aiven-variabelen toe aan het dashboardplatform en publiceer de app opnieuw.
-6. Open **Social Media** en controleer de regel **Laatst bijgewerkt**.
+5. Open **Social Media** en controleer de regel **Laatst bijgewerkt**.
 
 ## Meetdefinities en beperkingen
 
