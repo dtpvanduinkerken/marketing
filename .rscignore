@@ -1,0 +1,13 @@
+.git
+.github
+.Renviron
+.RData
+.Rhistory
+.Rproj.user
+.secrets
+ga_token.rds
+ga_token_base64.txt
+secrets
+data/snapshots
+data/archive
+data/members.csv

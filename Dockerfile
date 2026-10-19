@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4-openssl-dev \
     libssl-dev \
     libxml2-dev \
+    libmariadb-dev \
     libsodium-dev \
     pandoc \
     && rm -rf /var/lib/apt/lists/*
@@ -21,6 +22,7 @@ RUN R -e "install.packages(c( \
     'shiny', \
     'shinydashboard', \
     'DBI', \
+    'RMariaDB', \
     'duckdb', \
     'plotly', \
     'dplyr', \

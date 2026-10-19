@@ -6,6 +6,7 @@ pkgs <- c(
   "shiny",
   "shinydashboard",
   "DBI",
+  "RMariaDB",
   "duckdb",
   "plotly",
   "dplyr",

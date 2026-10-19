@@ -7,6 +7,7 @@ library(dplyr)
 library(googleAnalyticsR)
 
 if (file.exists("simplybook.R")) source("simplybook.R")
+if (file.exists("social_dashboard.R")) source("social_dashboard.R")
 
 # --------------------------------------------------
 # CONSTANTEN
@@ -1382,57 +1383,40 @@ ui <- dashboardPage(
       ),
       
       # SOCIAL MEDIA
-      tabItem(tabName = "social_media",
-              h2("Social Media"),
-              fluidRow(
-                column(3, kpi_card("Views",
-                                   format_number(data$social_media_kpis$totaal_views))),
-                column(3, kpi_card("Engagement",
-                                   format_number(data$social_media_kpis$totaal_engagement))),
-                column(3, kpi_card("Engagement Rate",
-                                   paste0(data$social_media_kpis$engagement_rate, "%"))),
-                column(3, kpi_card("Watch Time",
-                                   round(data$social_media_kpis$gemiddelde_watchtime, 1)))
-              ),
-              br(),
-              fluidRow(
-                box(width = 6, title = "Platform prestaties",
-                    plotlyOutput("social_platform_plot", height = "340px")),
-                box(width = 6, title = "Volgers per platform",
-                    plotlyOutput("social_volgers_plot", height = "340px"))
-              ),
-              
-              h3("Volgers per platform"),
-              fluidRow(uiOutput("social_volgers_kpis")),
-              
-              br(),
-              h3("Post Type Performance"),
-              fluidRow(
-                box(width = 6, title = "Gemiddelde views per post type",
-                    plotlyOutput("post_type_plot", height = "340px")),
-                box(width = 6, title = "Overzicht per post type",
-                    tableOutput("post_type_tabel"))
-              ),
-              
-              br(),
-              h3("Post Performance"),
-              fluidRow(
-                column(12,
-                       selectInput("post_select", "Selecteer post",
-                                   choices = setNames(
-                                     seq_len(nrow(data$post_performance)),
-                                     paste0(data$post_performance$titel, " (",
-                                            format(as.Date(data$post_performance$datum), "%d-%m-%Y"), ")")
-                                   )))
-              ),
-              fluidRow(
-                column(2, kpi_card("Views",    textOutput("post_views"))),
-                column(2, kpi_card("Likes",    textOutput("post_likes"))),
-                column(2, kpi_card("Comments", textOutput("post_comments"))),
-                column(2, kpi_card("Shares",   textOutput("post_shares"))),
-                column(2, kpi_card("Saves",    textOutput("post_saves"))),
-                column(2, kpi_card("Engagement", textOutput("post_engagement")))
-              )
+      tabItem(
+        tabName = "social_media",
+        h2("Social Media"),
+        div(
+          class = "social-filterbar",
+          fluidRow(
+            column(3, selectInput("social_platform", "Platform", choices = c("Facebook" = "facebook"))),
+            column(3, selectInput(
+              "social_period", "Periode",
+              choices = c("Afgelopen 7 dagen" = "7", "Afgelopen 30 dagen" = "30",
+                          "Afgelopen 90 dagen" = "90", "Zelf kiezen" = "custom"),
+              selected = "30"
+            )),
+            column(3, conditionalPanel(
+              condition = "input.social_period == 'custom'",
+              dateRangeInput("social_dates", "Datumbereik", start = Sys.Date() - 29, end = Sys.Date(),
+                             format = "dd-mm-yyyy", language = "nl")
+            )),
+            column(3, uiOutput("social_type_filter"))
+          )
+        ),
+        uiOutput("social_sync_status"),
+        uiOutput("social_kpis"),
+        fluidRow(
+          box(width = 4, title = "Ontwikkeling volgers", plotlyOutput("social_followers_plot", height = "320px")),
+          box(width = 4, title = "Dagelijkse weergaven", plotlyOutput("social_views_plot", height = "320px")),
+          box(width = 4, title = "Dagelijkse interacties", plotlyOutput("social_engagement_plot", height = "320px"))
+        ),
+        h3(class = "social-content-heading", "Contentprestaties"),
+        uiOutput("social_content_cards"),
+        fluidRow(
+          box(width = 6, title = "Top 5 op interacties", tableOutput("social_top_engagement")),
+          box(width = 6, title = "Top 5 op weergaven", tableOutput("social_top_views"))
+        )
       ),
       
       # META ADVERTENTIES
@@ -1632,6 +1616,7 @@ server <- function(input, output, session) {
       data
     }
   )
+  data <- hydrate_social_dashboard(data)
 
   website_live <- reactiveVal(list(
     kpis = leeg_website_kpis,
@@ -2180,79 +2165,189 @@ server <- function(input, output, session) {
   })
 
   # SOCIAL MEDIA
-  output$social_platform_plot <- renderPlotly({
-    maak_bar_plot(data$social_media_platform, "platform", "views", "Views")
+  social_daily <- reactive({
+    req(isTRUE(data$social_live$available))
+    data$social_live$daily |>
+      filter(platform == input$social_platform) |>
+      arrange(metric_date)
   })
-  
-  output$social_volgers_plot <- renderPlotly({
-    kleuren <- c(KLEUR_PRIMAIR, KLEUR_SECUNDAIR, KLEUR_TERTIAIR, KLEUR_LICHT,
-                 "#3a5e0d", "#b8d96e")
-    maak_donut_plot(data$social_media_volgergroei, "platform",
-                    "huidige_volgers", kleuren)
+
+  social_period_bounds <- reactive({
+    daily <- social_daily()
+    laatste <- if (nrow(daily)) max(daily$metric_date, na.rm = TRUE) else Sys.Date()
+    if (identical(input$social_period, "custom") && length(input$social_dates) == 2) {
+      start <- as.Date(input$social_dates[1])
+      end <- as.Date(input$social_dates[2])
+    } else {
+      dagen <- suppressWarnings(as.integer(input$social_period %||% "30"))
+      if (is.na(dagen)) dagen <- 30L
+      end <- laatste
+      start <- end - dagen + 1
+    }
+    lengte <- as.integer(end - start) + 1L
+    list(start = start, end = end, previous_start = start - lengte, previous_end = start - 1, days = lengte)
   })
-  
-  output$social_volgers_kpis <- renderUI({
-    
-    df <- data$social_media_volgers |>
-      mutate(datum = as.Date(datum))
-    
-    platforms <- sort(unique(df$platform))
-    
-    kaarten <- lapply(platforms, function(plt) {
-      
-      df_plt <- df |> filter(platform == plt) |> arrange(datum)
-      
-      laatste_datum  <- max(df_plt$datum, na.rm = TRUE)
-      huidige_volgers <- df_plt |> filter(datum == laatste_datum) |> pull(volgers) |> tail(1)
-      
-      referentie_datum <- laatste_datum - 30
-      vergelijk_df <- df_plt |> filter(datum <= referentie_datum)
-      
-      if (nrow(vergelijk_df) > 0) {
-        vorige_volgers <- vergelijk_df |> filter(datum == max(datum)) |> pull(volgers) |> tail(1)
-        groei_pct <- round((huidige_volgers - vorige_volgers) / vorige_volgers * 100, 1)
-        trend_class <- ifelse(groei_pct >= 0, "kpi-trend-up", "kpi-trend-down")
-        trend_label <- paste0(ifelse(groei_pct >= 0, "+", ""), groei_pct, "%")
-      } else {
-        trend_class <- NULL
-        trend_label <- NULL
-      }
-      
-      column(3, kpi_card(
-        titel       = plt,
-        waarde      = format_number(huidige_volgers),
-        trend_class = trend_class,
-        trend_label = trend_label,
-        subtitel    = "t.o.v. 30 dagen terug"
-      ))
-      
-    })
-    
-    do.call(tagList, kaarten)
-    
+
+  social_current_daily <- reactive({
+    grenzen <- social_period_bounds()
+    social_daily() |>
+      filter(metric_date >= grenzen$start, metric_date <= grenzen$end)
   })
-  
-  # POST TYPE PERFORMANCE
-  output$post_type_plot <- renderPlotly({
-    maak_bar_plot(data$post_type_performance, "post_type", "gemiddelde_views", "Gemiddelde views")
+
+  social_previous_daily <- reactive({
+    grenzen <- social_period_bounds()
+    social_daily() |>
+      filter(metric_date >= grenzen$previous_start, metric_date <= grenzen$previous_end)
   })
-  
-  output$post_type_tabel <- renderTable({
-    data$post_type_performance |>
-      rename(
-        "Post type"          = post_type,
-        "Aantal posts"       = aantal_posts,
-        "Views"               = views,
-        "Likes"               = likes,
-        "Comments"            = comments,
-        "Shares"              = shares,
-        "Saves"               = saves,
-        "Engagement"          = engagement,
-        "Engagement rate (%)" = engagement_rate,
-        "Gem. views"          = gemiddelde_views,
-        "Gem. engagement"     = gemiddelde_engagement
+
+  laatste_volgers <- function(df, datum) {
+    waarden <- df |> filter(metric_date <= datum, !is.na(followers_count)) |> arrange(metric_date)
+    if (!nrow(waarden)) NA_real_ else tail(waarden$followers_count, 1)
+  }
+
+  social_sum <- function(x) {
+    if (!length(x) || all(is.na(x))) NA_real_ else sum(x, na.rm = TRUE)
+  }
+
+  output$social_type_filter <- renderUI({
+    if (!isTRUE(data$social_live$available) || !nrow(data$social_live$posts)) {
+      return(selectInput("social_content_type", "Type content", choices = c("Alle content" = "all")))
+    }
+    types <- data$social_live$posts |>
+      filter(platform == input$social_platform, !is.na(post_type), nzchar(post_type)) |>
+      pull(post_type) |>
+      unique() |>
+      sort()
+    selectInput("social_content_type", "Type content", choices = c("Alle content" = "all", setNames(types, tools::toTitleCase(types))))
+  })
+
+  output$social_sync_status <- renderUI({
+    if (!isTRUE(data$social_live$available)) {
+      return(div(class = "social-status social-status--warning", icon("triangle-exclamation"), data$social_live$message))
+    }
+    logs <- data$social_live$sync
+    laatste <- if (nrow(logs)) logs[1, , drop = FALSE] else NULL
+    laatste_succes <- logs |> filter(status == "success") |> head(1)
+    bijgewerkt <- if (nrow(laatste_succes)) {
+      format(as.POSIXct(laatste_succes$finished_at, tz = "UTC"), "%d-%m-%Y %H:%M", tz = "Europe/Amsterdam")
+    } else "onbekend"
+    fout <- !is.null(laatste) && identical(laatste$status[1], "error")
+    div(
+      class = paste("social-status", if (fout) "social-status--warning" else "social-status--ok"),
+      icon(if (fout) "triangle-exclamation" else "circle-check"),
+      paste0("Laatst bijgewerkt: ", bijgewerkt, if (fout) ". De laatste synchronisatie mislukte; eerder opgeslagen cijfers blijven zichtbaar." else ".")
+    )
+  })
+
+  output$social_kpis <- renderUI({
+    req(isTRUE(data$social_live$available))
+    huidig <- social_current_daily()
+    vorig <- social_previous_daily()
+    grenzen <- social_period_bounds()
+    volgers_nu <- laatste_volgers(social_daily(), grenzen$end)
+    volgers_start <- laatste_volgers(social_daily(), grenzen$start)
+    volgers_groei <- if (is.na(volgers_nu) || is.na(volgers_start)) NA_real_ else volgers_nu - volgers_start
+    views_nu <- social_sum(huidig$media_views)
+    views_vorig <- social_sum(vorig$media_views)
+    interacties_nu <- social_sum(huidig$post_engagements)
+    interacties_vorig <- social_sum(vorig$post_engagements)
+    views_delta <- social_delta(views_nu, views_vorig)
+    interacties_delta <- social_delta(interacties_nu, interacties_vorig)
+    tagList(
+      fluidRow(
+        column(4, kpi_card("Huidig aantal volgers", social_number(volgers_nu), subtitel = "laatste momentopname")),
+        column(4, kpi_card("Groei in volgers", if (is.na(volgers_groei)) "Niet beschikbaar" else paste0(if (volgers_groei > 0) "+" else "", social_number(volgers_groei)), subtitel = "binnen geselecteerde periode")),
+        column(4, kpi_card("Totaal aantal weergaven", social_number(views_nu), views_delta$class, views_delta$label, "t.o.v. vorige gelijke periode"))
+      ),
+      fluidRow(
+        column(6, kpi_card("Totaal aantal interacties", social_number(interacties_nu), subtitel = "dagtotalen binnen periode")),
+        column(6, kpi_card("Interactieontwikkeling", interacties_delta$label %||% "Niet beschikbaar", interacties_delta$class, interacties_delta$label, "t.o.v. vorige gelijke periode"))
       )
+    )
   })
+
+  output$social_followers_plot <- renderPlotly({
+    df <- social_current_daily() |> filter(!is.na(followers_count))
+    if (!nrow(df)) return(maak_leeg_plot())
+    maak_lijn_plot(df, "metric_date", "followers_count", "Volgers", fill = FALSE)
+  })
+
+  output$social_views_plot <- renderPlotly({
+    df <- social_current_daily() |> filter(!is.na(media_views))
+    if (!nrow(df)) return(maak_leeg_plot())
+    maak_lijn_plot(df, "metric_date", "media_views", "Weergaven")
+  })
+
+  output$social_engagement_plot <- renderPlotly({
+    df <- social_current_daily() |> filter(!is.na(post_engagements))
+    if (!nrow(df)) return(maak_leeg_plot())
+    maak_lijn_plot(df, "metric_date", "post_engagements", "Interacties", lijn_kleur = KLEUR_SECUNDAIR)
+  })
+
+  social_posts_filtered <- reactive({
+    req(isTRUE(data$social_live$available))
+    grenzen <- social_period_bounds()
+    df <- data$social_live$posts |>
+      filter(platform == input$social_platform) |>
+      mutate(publicatiedatum = as.Date(format(published_at, tz = "Europe/Amsterdam"))) |>
+      filter(publicatiedatum >= grenzen$start, publicatiedatum <= grenzen$end)
+    type <- input$social_content_type %||% "all"
+    if (!identical(type, "all")) df <- df |> filter(post_type == type)
+    df |> arrange(desc(published_at))
+  })
+
+  output$social_content_cards <- renderUI({
+    posts <- social_posts_filtered() |> head(12)
+    if (!nrow(posts)) return(div(class = "social-empty", "Geen berichten gevonden voor deze selectie."))
+    do.call(tagList, lapply(seq_len(nrow(posts)), function(i) {
+      post <- posts[i, ]
+      tekst <- post$message %||% ""
+      if (is.na(tekst) || !nzchar(tekst)) tekst <- "Bericht zonder beschikbare tekst"
+      if (nchar(tekst) > 220) tekst <- paste0(substr(tekst, 1, 217), "…")
+      post_type <- post$post_type %||% "onbekend"
+      if (is.na(post_type) || !nzchar(post_type)) post_type <- "onbekend"
+      div(
+        class = "social-post-card",
+        if (!is.na(post$picture_url) && nzchar(post$picture_url)) tags$img(src = post$picture_url, alt = "Afbeelding bij Facebook-bericht", loading = "lazy"),
+        div(
+          class = "social-post-card__body",
+          div(class = "social-post-card__meta", format(post$publicatiedatum, "%d-%m-%Y"), " · ", tools::toTitleCase(post_type)),
+          p(tekst),
+          div(class = "social-post-card__metrics",
+              span("Weergaven: ", social_number(post$media_views)),
+              span("Likes: ", social_number(post$likes)),
+              span("Alle reacties: ", social_number(post$reactions_total)),
+              span("Opmerkingen: ", social_number(post$comments)),
+              span("Shares: ", social_number(post$shares)),
+              span("Interacties: ", social_number(post$engagement_total))),
+          if (!is.na(post$permalink_url) && nzchar(post$permalink_url)) tags$a(href = post$permalink_url, target = "_blank", rel = "noopener", "Bekijk bericht")
+        )
+      )
+    })) |>
+      div(class = "social-posts-grid")
+  })
+
+  maak_top_tabel <- function(df, kolom) {
+    if (!nrow(df)) return(data.frame(Melding = "Geen gegevens beschikbaar"))
+    df |>
+      filter(!is.na(.data[[kolom]])) |>
+      arrange(desc(.data[[kolom]])) |>
+      head(5) |>
+      transmute(
+        Datum = format(publicatiedatum, "%d-%m-%Y"),
+        Type = tools::toTitleCase(post_type),
+        Bericht = ifelse(is.na(message) | !nzchar(message), "Niet beschikbaar", substr(message, 1, 80)),
+        Waarde = .data[[kolom]]
+      )
+  }
+
+  output$social_top_engagement <- renderTable({
+    maak_top_tabel(social_posts_filtered(), "engagement_total")
+  }, striped = TRUE, hover = TRUE, na = "Niet beschikbaar")
+
+  output$social_top_views <- renderTable({
+    maak_top_tabel(social_posts_filtered(), "media_views")
+  }, striped = TRUE, hover = TRUE, na = "Niet beschikbaar")
 
   # META ADVERTENTIES
   meta_campagne <- reactive({
@@ -2360,19 +2455,6 @@ server <- function(input, output, session) {
           "Meta rapporteert voor deze advertentieset 0 directe websiteaankopen, maar laat de totale aankoopwaarde leeg. Dat betekent dat Meta geen omzet aan de campagne heeft toegeschreven; het bewijst niet dat bezoekers nooit later of via een ander kanaal hebben gekocht. Zonder gemeten aankoopwaarde kan ROAS niet worden berekend.")
     )
   })
-  
-  # POST PERFORMANCE
-  post_selected <- reactive({
-    req(input$post_select)
-    data$post_performance[as.integer(input$post_select), ]
-  })
-  
-  output$post_views     <- renderText({ format_number(post_selected()$views) })
-  output$post_likes     <- renderText({ format_number(post_selected()$likes) })
-  output$post_comments  <- renderText({ format_number(post_selected()$comments) })
-  output$post_shares    <- renderText({ format_number(post_selected()$shares) })
-  output$post_saves     <- renderText({ format_number(post_selected()$saves) })
-  output$post_engagement <- renderText({ format_number(post_selected()$engagement) })
   
   # WEBSITE
   
